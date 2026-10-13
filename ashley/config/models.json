@@ -1,0 +1,57 @@
+{
+  // Models run OUTSIDE the container, on the host. From inside the container
+  // the host is "host.docker.internal".
+  //   provider "openai" = llama-server (port 8080), start it with host/start-qwen30b.bat
+  //   provider "ollama" = Ollama on Windows (port 11434)
+  // contextSize must not exceed what the server was started with (-c 32768 for the 30B).
+  "models": [
+    {
+      "name": "qwen3-coder-30b",
+      "description": "Qwen3-Coder 30B-A3B - main model, best at tools (llama-server)",
+      "provider": "openai",
+      "baseUrl": "http://host.docker.internal:8080/v1",
+      "model": "qwen3-coder-30b",
+      "contextSize": 32768,
+      "temperature": 0.3,
+      "maxTokens": 4096,
+      "launch": "F:/AI-Agents/host/start-qwen30b.bat"
+    },
+    {
+      "name": "swe-ut-14b",
+      "description": "14B coder via Ollama",
+      "provider": "ollama",
+      "baseUrl": "http://host.docker.internal:11434",
+      "model": "swe-ut-14b:latest",
+      "contextSize": 16384,
+      "launch": "Ollama must be running on the host (ollama serve)"
+    },
+    {
+      "name": "qwen2.5-7b",
+      "description": "Small and fast, good for quick jobs (Ollama)",
+      "provider": "ollama",
+      "baseUrl": "http://host.docker.internal:11434",
+      "model": "qwen2.5:7b",
+      "contextSize": 16384,
+      "launch": "Ollama must be running on the host (ollama serve)"
+    },
+    {
+      "name": "llama3.2",
+      "description": "Smallest, weak at tools (Ollama)",
+      "provider": "ollama",
+      "baseUrl": "http://host.docker.internal:11434",
+      "model": "llama3.2:latest",
+      "contextSize": 8192,
+      "launch": "Ollama must be running on the host (ollama serve)"
+    },
+    {
+      "name": "yld",
+      "description": "8B with tools (Ollama), hidden reasoning switched off for speed",
+      "provider": "ollama",
+      "baseUrl": "http://host.docker.internal:11434",
+      "model": "yld:latest",
+      "contextSize": 16384,
+      "think": false,
+      "launch": "Ollama must be running on the host (ollama serve)"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+# Files that run inside Linux containers must stay LF, even when checked out on Windows.
+Dockerfile        text eol=lf
+*.py              text eol=lf
+*.yml             text eol=lf
+*.json            text eol=lf
+*.md              text eol=lf
+*.cs              text eol=lf
+*.csproj          text eol=lf
+
+# Windows launchers need CRLF.
+*.cmd             text eol=crlf
+*.bat             text eol=crlf
+
+# Voice models are binary.
+*.onnx            binary

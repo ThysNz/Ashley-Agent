@@ -1,0 +1,11 @@
+bin/
+obj/
+*/workspace/*
+*/memory/*
+!*/workspace/.gitkeep
+!*/memory/.gitkeep
+
+# Piper voices: only the default one is tracked; others are downloaded with /addvoice
+voice/tts/models/*
+!voice/tts/models/en_US-hfc_female-medium.onnx
+!voice/tts/models/en_US-hfc_female-medium.onnx.json

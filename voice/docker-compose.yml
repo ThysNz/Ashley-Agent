@@ -1,0 +1,23 @@
+# Speech services shared by every agent. From this folder:
+#   docker compose up -d --build        (first start downloads the Whisper model, ~150 MB)
+#   docker compose down
+# Published on 127.0.0.1 only - the voice client on this PC talks to them.
+services:
+  stt:
+    build: ./stt
+    ports:
+      - "127.0.0.1:9001:8000"
+    volumes:
+      - whisper-models:/models
+    restart: unless-stopped
+
+  tts:
+    build: ./tts
+    ports:
+      - "127.0.0.1:9002:8000"
+    volumes:
+      - ./tts/models:/models
+    restart: unless-stopped
+
+volumes:
+  whisper-models:
