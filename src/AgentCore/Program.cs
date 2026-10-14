@@ -22,10 +22,11 @@ catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException o
 }
 var state = ConfigLoader.LoadState(paths);
 
-ModelProfile? FindModel(string? name) =>
-    string.IsNullOrWhiteSpace(name) ? null : models.FirstOrDefault(m => m.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase));
+// config\models.json plus any models added from the web page.
+var registry = new ModelRegistry(models, paths);
+ModelProfile? FindModel(string? name) => registry.Find(name);
 
-var profile = FindModel(state.Model) ?? FindModel(config.DefaultModel) ?? models[0];
+var profile = FindModel(state.Model) ?? FindModel(config.DefaultModel) ?? registry.All[0];
 var personaName = state.Persona ?? config.Persona;
 var personaText = ConfigLoader.LoadPersona(paths, personaName);
 if (personaText.Length == 0)
@@ -67,7 +68,9 @@ if (args.Contains("--serve"))
     var port = int.TryParse(Environment.GetEnvironmentVariable("AGENT_PORT"), out var envPort) ? envPort : 5000;
     var down = await agent.Client.PingAsync();
     if (down != null) Ui.Warn(down);
-    await ApiServer.RunAsync(agent, config, port, paths, state);
+    var chats = new ChatStore(paths.Memory);
+    agent.LoadHistory(chats.LoadCurrent()); // pick up where the last session left off
+    await ApiServer.RunAsync(new ApiContext(agent, config, paths, state, registry, http, memory, sandbox, chats), port);
     return 0;
 }
 
@@ -161,7 +164,7 @@ async Task<bool> HandleCommand(string line)
             break;
 
         case "/models":
-            foreach (var m in models)
+            foreach (var m in registry.All)
             {
                 var mark = m.Name == agent.Client.Profile.Name ? "*" : " ";
                 Ui.Say($" {mark} {m.Name,-18} {m.Provider,-7} {m.ContextSize,6} ctx  {m.Description}");

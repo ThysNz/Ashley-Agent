@@ -30,6 +30,11 @@ public sealed class AgentLoop
     // Called with a one-line description after every tool call (used by the API to report them).
     public Action<string>? OnToolActivity { get; set; }
 
+    // Live progress for the web page: model calls, commentary, tool start/end, token usage.
+    public Action<AgentEvent>? OnEvent { get; set; }
+
+    public IReadOnlyList<Msg> History => _history;
+
     public int? LastPromptTokens { get; private set; }
     public LlmClient Client => _client;
     public string PersonaName { get; private set; }
@@ -64,6 +69,45 @@ public sealed class AgentLoop
         _charsPerToken = 3.0;
     }
 
+    // Restores a saved conversation (the web page keeps its chat across restarts).
+    public void LoadHistory(IEnumerable<Msg> messages)
+    {
+        Reset();
+        _history.AddRange(messages);
+    }
+
+    private void Emit(AgentEvent e) => OnEvent?.Invoke(e);
+
+    // How full the model's context window is, split by what fills it. Token counts
+    // come from the model server when it has reported them; the split is estimated
+    // from character counts and scaled to match.
+    public ContextInfo GetContextInfo()
+    {
+        var profile = _client.Profile;
+        var notes = _memory.ReadNotes();
+        var total = BuildSystemPrompt().Length;
+        var notesChars = notes.Length > 0 ? notes.Length + 190 : 0;
+        var personaChars = _persona.Length;
+        var rulesChars = Math.Max(0, total - notesChars - personaChars);
+        var toolChars = _tools.Sum(t => t.Name.Length + t.Description.Length + t.Schema.ToJsonString().Length);
+        var historyChars = _history.Sum(m => m.Content.Length + (m.ToolCalls?.Sum(c => c.ArgsJson.Length + c.Name.Length) ?? 0) + 20);
+
+        var estimated = (personaChars + rulesChars + notesChars + toolChars + historyChars) / _charsPerToken;
+        var used = LastPromptTokens is int reported ? reported : (int)estimated;
+        var scale = estimated > 0 ? used / estimated : 1;
+        int Tokens(int chars) => (int)Math.Round(chars / _charsPerToken * scale);
+
+        return new ContextInfo(profile.ContextSize, used, LastPromptTokens == null, profile.MaxTokens,
+                               Tokens(personaChars + rulesChars), Tokens(toolChars), Tokens(notesChars), Tokens(historyChars));
+    }
+
+    // Exactly what the model is sent: the system prompt and the (trimmed) conversation.
+    public InspectInfo Inspect() => new(
+        BuildSystemPrompt(),
+        _tools.Select(t => t.Name).ToList(),
+        _history.Select(m => new InspectMessage(m.Role, m.ToolName, Text.Clip(m.Content, 3000),
+                                                m.ToolCalls?.Select(c => $"{c.Name} {c.ArgsJson}").ToList())).ToList());
+
     public async Task<string> RunTurnAsync(string userText, CancellationToken ct)
     {
         var turnStart = _history.Count;
@@ -75,10 +119,13 @@ public sealed class AgentLoop
             for (var round = 0; round < _config.MaxToolRounds; round++)
             {
                 FitToContext();
+                Emit(new AgentEvent("thinking", Round: round + 1));
                 var result = await _client.ChatAsync(_history, BuildSystemPrompt(), _tools, ct);
                 LastPromptTokens = result.PromptTokens;
                 if (result.PromptTokens is > 200 && _lastSentChars > 0)
                     _charsPerToken = Math.Clamp((double)_lastSentChars / result.PromptTokens.Value, 1.2, 4.5);
+                if (result.PromptTokens is int promptTokens)
+                    Emit(new AgentEvent("usage", Tokens: promptTokens, Window: _client.Profile.ContextSize));
 
                 if (result.Calls.Count == 0)
                 {
@@ -97,7 +144,11 @@ public sealed class AgentLoop
                 Add(new Msg("assistant", result.Content, result.Calls));
                 // Text written alongside a tool call is progress chatter, not the answer:
                 // show it dimmed and short so the final reply isn't a repeat of it.
-                if (result.Content.Length > 0) Ui.Info(Text.Clip(result.Content.Replace('\n', ' '), 160));
+                if (result.Content.Length > 0)
+                {
+                    Ui.Info(Text.Clip(result.Content.Replace('\n', ' '), 160));
+                    Emit(new AgentEvent("text", Text: result.Content));
+                }
 
                 foreach (var call in result.Calls)
                 {
@@ -138,12 +189,19 @@ public sealed class AgentLoop
         catch (JsonException)
         {
             Ui.Tool(call.Name, call.ArgsJson, "bad arguments");
+            Emit(new AgentEvent("tool_start", Name: call.Name, Text: call.ArgsJson, Args: call.ArgsJson, Id: call.Id));
+            Emit(new AgentEvent("tool_end", Name: call.Name, Id: call.Id, Result: "bad arguments", Failed: true));
             return "Error: the arguments were not valid JSON. Call the tool again with a valid JSON object.";
         }
+
+        var what = Describe(call.Name, args);
+        Emit(new AgentEvent("tool_start", Name: call.Name, Text: what, Args: Text.Clip(call.ArgsJson, 4000), Id: call.Id));
+        var started = System.Diagnostics.Stopwatch.StartNew();
 
         if (!_toolsByName.TryGetValue(call.Name, out var tool))
         {
             Ui.Tool(call.Name, call.ArgsJson, "unknown tool");
+            Emit(new AgentEvent("tool_end", Name: call.Name, Id: call.Id, Result: "unknown tool", Failed: true));
             return $"Error: there is no tool called '{call.Name}'. Available: {string.Join(", ", _toolsByName.Keys)}.";
         }
 
@@ -158,6 +216,8 @@ public sealed class AgentLoop
             output = $"Error: {ex.Message}";
         }
 
+        Emit(new AgentEvent("tool_end", Name: call.Name, Id: call.Id, Result: Text.Clip(output, 4000),
+                            Ms: started.ElapsedMilliseconds, Failed: output.StartsWith("Error", StringComparison.Ordinal)));
         Ui.Tool(call.Name, Describe(call.Name, args), FirstLine(output));
         OnToolActivity?.Invoke($"{call.Name} {Describe(call.Name, args)} => {FirstLine(output)}");
         return output.Length > MaxCurrentToolResultChars * 2 ? Text.ClipMiddle(output, MaxCurrentToolResultChars, MaxCurrentToolResultChars) : output;
@@ -294,7 +354,7 @@ public sealed class AgentLoop
 
     // ---- display helpers ----------------------------------------------
 
-    private static string Describe(string tool, JsonElement args)
+    public static string Describe(string tool, JsonElement args)
     {
         string? Pick(params string[] keys) => keys.Select(k => Args.Str(args, k)).FirstOrDefault(v => !string.IsNullOrEmpty(v));
         return tool switch
@@ -314,3 +374,19 @@ public sealed class AgentLoop
         return line.Length > 110 ? line[..110] + "..." : line;
     }
 }
+
+// One step of progress while a turn runs (sent to the web page as it happens).
+//   thinking   a model call is starting          (Round)
+//   usage      the server's prompt token count   (Tokens of Window)
+//   text       commentary written with tool calls (Text)
+//   tool_start / tool_end                        (Name, Text = short description, Args / Result, Ms, Failed)
+public sealed record AgentEvent(string Type, string? Name = null, string? Text = null, string? Args = null,
+                                string? Result = null, long Ms = 0, int? Tokens = null, int Round = 0,
+                                string? Id = null, bool Failed = false, int? Window = null);
+
+public sealed record ContextInfo(int Window, int Used, bool Estimated, int MaxOutput,
+                                 int System, int Tools, int Notes, int History);
+
+public sealed record InspectMessage(string Role, string? Tool, string Content, List<string>? Calls);
+
+public sealed record InspectInfo(string SystemPrompt, List<string> Tools, List<InspectMessage> Messages);

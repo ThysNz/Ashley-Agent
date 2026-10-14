@@ -3,11 +3,12 @@
 Ashley is a text and voice AI agent that runs inside a Docker container. She can read and write
 files in a workspace folder, run shell commands, browse the web and keep long-term notes. The
 language model runs **outside** the container on the host PC, so everything else moves with the
-`F:\AI-Agents` folder to any machine that has Docker.
+`F:\AI-Agents` folder to any machine that has Docker. You talk to her in a **web page** (recommended),
+a console, or the Windows voice client.
 
 Contents: [Start everything](#start-everything) | [Architecture](#architecture) | [Folders](#folders) |
-[Console commands](#console-commands) | [Tools](#tools) | [Configuration](#configuration) |
-[Memory and files](#memory-and-files) | [Voice](#voice) | [HTTP API](#http-api) | [Safety](#safety-and-sandbox) |
+[Web page](#web-page) | [Console commands](#console-commands) | [Tools](#tools) | [Configuration](#configuration) |
+[Memory and files](#memory-and-files) | [Voice client](#voice-client-windows) | [HTTP API](#http-api) | [Safety](#safety-and-sandbox) |
 [Troubleshooting](#troubleshooting) | [Moving to another PC](#moving-to-another-pc) | [Limits](#known-limits)
 
 ---
@@ -41,18 +42,31 @@ This builds the image if needed (first time takes a few minutes and needs intern
 and opens the chat. Type a request. `/help` lists commands, **Ctrl+C stops a running task**, `/quit` exits.
 The container is removed when you quit; your files and notes stay on disk.
 
-### 2b. Voice
+### 2b. Web page (recommended)
+
+```
+F:\AI-Agents\ashley\ashley-ui.cmd
+```
+
+This starts the speech containers and Ashley's server, waits until it is ready, and opens the page
+(`http://127.0.0.1:5000`; in an app-style Edge window if Edge is installed). The page has the chat, model / persona / voice
+drop-downs, a context meter, hold-to-talk voice and side panels. See [Web page](#web-page). You can also just open
+`http://127.0.0.1:5000` in any browser once the server container is running.
+
+### 2c. Voice client (Windows)
 
 ```
 F:\AI-Agents\ashley\ashley-voice.cmd
 ```
+
+This is the older console-style voice client. The web page can do the same job in the browser, without the .NET SDK.
 
 This starts three containers (speech-to-text, text-to-speech, Ashley's API server) and then the voice client.
 The client first shows which microphone it uses, then checks the three services. Press **Enter** to start recording,
 speak, press **Enter** to stop. It reports the recording length and loudness (e.g. `Recorded 4.2s, loudest point 38% of full scale`)
 and warns if the mic recorded silence. You can also type a message instead.
 Ctrl+C stops a task; any key cuts off her speech; `quit` exits the client (the containers keep running).
-Type `/help` for the voice and personality commands (see [Voice](#voice)).
+Type `/help` for the voice and personality commands (see [Voice client](#voice-client-windows)).
 
 The first start downloads the Whisper model (about 150 MB), so the speech-to-text service takes a minute
 or two to answer its first health check; later starts are quick.
@@ -62,8 +76,9 @@ or two to answer its first health check; later starts are quick.
 | What | How |
 |---|---|
 | Console chat | `/quit` |
+| Web page | close the tab (the server keeps running; your chat is saved) |
 | Voice client | `quit` |
-| Voice containers + API server | `F:\AI-Agents\ashley\stop-voice.cmd` |
+| Voice containers + API server (what the web page uses) | `F:\AI-Agents\ashley\stop-voice.cmd` |
 | Model server | Close the `start-qwen30b.bat` window (frees the GPU) |
 
 > The API server container is set to `restart: unless-stopped`, so after a reboot it comes back up on its
@@ -77,7 +92,7 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 | Container | Meaning | Port (127.0.0.1 only) |
 |---|---|---|
-| `ashley-server-1` | Ashley's API (used by voice) | 5000 |
+| `ashley-server-1` | Ashley's web page and API | 5000 |
 | `voice-stt-1` | Whisper speech-to-text | 9001 |
 | `voice-tts-1` | Piper text-to-speech | 9002 |
 | `ashley-ashley-run-...` | A console chat session | none |
@@ -87,8 +102,8 @@ Health URLs: `http://127.0.0.1:5000/health`, `:9001/health`, `:9002/health`.
 ### Typical order, start to finish
 1. Docker Desktop running.
 2. `start-qwen30b.bat` (wait for it to load).
-3. `ashley.cmd` (text) **or** `ashley-voice.cmd` (voice).
-4. When finished: quit, then `stop-voice.cmd` if you used voice, and close the model window.
+3. `ashley-ui.cmd` (web page, text and voice) **or** `ashley.cmd` (console) **or** `ashley-voice.cmd` (Windows voice client).
+4. When finished: close the page or quit, then `stop-voice.cmd` if you used the page or voice, and close the model window.
 
 ---
 
@@ -133,6 +148,7 @@ F:\AI-Agents\
   README.md                  overview of the whole project
   Dockerfile                 the shared image (.NET SDK + git, python, node, ripgrep, build tools, sudo)
   src\AgentCore\             agent source (C#): loop, tools, memory, model clients, HTTP API, speech clean-up
+  src\AgentCore\ui\          the web page: index.html, app.css, app.js (no libraries, no build step, works offline)
   host\
     start-qwen30b.bat        starts the 30B model on the host
   voice\
@@ -142,12 +158,13 @@ F:\AI-Agents\
   ashley\                    THIS AGENT
     README.md                this file
     ashley.cmd               console chat
-    ashley-voice.cmd         voice mode (starts containers + client)
+    ashley-ui.cmd            web page (starts containers, opens the page)
+    ashley-voice.cmd         Windows voice client (starts containers + client)
     stop-voice.cmd           stops the voice containers and API server
     docker-compose.yml       services: ashley (console), server (API, profile "server")
     config\                  agent.json, models.json, personas\*.md      (read-only inside the container)
     workspace\               the ONLY folder on the host she can change
-    memory\                  notes.md, todo.md, state.json, sessions\, backups\
+    memory\                  notes.md, todo.md, state.json, sessions\, backups\, chats\, models.local.json
 ```
 
 ---
@@ -256,12 +273,71 @@ server reads it only when it starts, so after changing model in the console rest
 | `memory\sessions\<date>.jsonl` | log of every message, tool call and result, written as it happens |
 | `memory\backups\<time>\` | copy of any file before it is overwritten, edited or deleted (files only, not whole folders) |
 | `memory\state.json` | last chosen model, persona and voice |
+| `memory\chats\` | the web page's conversations: `current.json` (survives restarts) and one file per saved chat |
+| `memory\models.local.json` | models added from the web page (the ones in `config\models.json` are not touched) |
 
 Back up by copying the `ashley` folder. Tell her "remember that ..." to add a note, or edit `notes.md` directly.
 
 ---
 
-## Voice
+## Web page
+
+Open it with `ashley-ui.cmd`, or go to `http://127.0.0.1:5000` while the server container is running. It is served by Ashley's own
+container (plain HTML, CSS and JavaScript, no libraries and no internet needed), so it moves with the folder. It follows the browser's
+light or dark setting.
+
+### What is on the screen
+
+| Area | What it does |
+|---|---|
+| **Top bar** | Drop-downs for **model**, **persona** and **voice**. The coloured dot is green when the model server is reachable. Buttons: saved chats, new chat, inspect, manage models, show/hide side panel |
+| **Banner** | Appears if the model server (or the agent itself) can't be reached, with the command to start it |
+| **Context meter** | Tokens used out of the model's window, with the share taken by system prompt, tools, notes and chat. Turns amber at 70% and red at 90%. Updates live while she works |
+| **Chat** | Your messages and hers. While she works you see each tool call appear live (`write_file`, `run_command`, ...) as a collapsible row with arguments, result, status and time. Replies are formatted (code blocks with Copy). Under each reply: speak it again, copy it, time taken, number of tool calls |
+| **Message box** | Type and press Enter (Shift+Enter for a new line). The send button becomes **Stop** while she works |
+| **Side panel** | Her todo list, her notes, and the workspace file browser (click a file to read it). Updates as she works |
+
+### Talking to her (hold to talk)
+
+- **Hold the mic button, or hold the space bar** (the space bar works whenever the message box is empty, including right after a reply, when the cursor is back in the box; once you have typed something, a space is just a space), speak, and let go. A red level bar and a timer show that the
+  microphone is hearing you. The page then transcribes what you said and sends it. Tick or untick **Send after talking** to choose between sending
+  straight away and putting the text in the box so you can fix it first.
+- **Esc** while recording cancels the recording; **Esc** while she is speaking cuts her off. Pressing the mic starts a new recording and stops any speech.
+- Very short taps (under 0.4 s) are ignored. If the microphone records silence you see `No sound heard from "<device>" (level N%)`.
+- When you press, the button dims for a moment while the microphone opens, then turns **red** with the level bar. Start speaking when it is red.
+  Below the message box the page shows which microphone it used and how long and how loud your last recording was
+  (e.g. `Mic: HyperX Cloud Core · last recording 3.4 s, level 62%`), which makes a silent or wrong microphone easy to spot.
+- A safety check ends any recording whose release was missed (lost focus, odd key handling), and a recording is also cancelled if you
+  switch to another window or tab. A recording stops by itself after two minutes.
+- **Speak replies** (on by default): she reads each reply aloud in the chosen voice and answers in one to three plain sentences. Turn it off for normal,
+  longer written answers.
+- The first time, the browser asks permission to use the microphone. The page opens the microphone fresh for each recording and releases it
+  when you let go, so the browser's "microphone in use" marker only shows while you hold the button.
+- It only works at `http://127.0.0.1:5000` or `http://localhost:5000` (browsers allow the microphone only on secure or local addresses).
+- The microphone and speaker are the browser's: pick them in the browser's site settings (or Windows sound settings). The `--mic` options of
+  the Windows voice client do not apply here.
+
+### Models, voices, chats
+
+- **Model drop-down:** pick any model; the conversation continues and the meter's window size changes to match. `(offline)` means that model's
+  server is not running. **Manage models...** (or the chip button) opens a list showing which servers are reachable, with **Use** buttons, and a
+  second list of models that are installed in Ollama but not in your list, with an **Add** button. Added models are saved in `memory\models.local.json`;
+  edit `config\models.json` on disk for anything else. The page cannot start the 30B for you (containers cannot start programs on the host).
+- **Persona drop-down:** switches personality immediately; the conversation continues.
+- **Voice drop-down:** switches voice and plays a sample. **Add a voice...** opens the catalog search and download (about 60 MB each).
+- **Saved chats:** the current chat is kept on disk and comes back after a restart or reload (the last 12 turns, as in the console). **New chat** saves
+  the current one to the list and starts empty; the clock button lists saved chats and reopens them.
+- **Inspect** (eye button): shows exactly what is sent to the model: the system prompt, the tools offered, and the conversation as the model sees it.
+  Useful for working out why she behaved a certain way.
+
+### Notes
+- Her reply appears when she finishes the step; the model is not streamed word by word, but every tool call and the live token count are.
+- Only one task runs at a time. Selecting a model, persona or voice is disabled while she is working.
+- The page and API only answer to `localhost` and `127.0.0.1` (other host names are refused), because she has a shell.
+
+---
+
+## Voice client (Windows)
 
 Flow: microphone -> **VoiceClient** -> **stt** (Whisper `base.en`, CPU, about 0.6 s) -> Ashley (`/chat` with `voice: true`)
 -> **tts** (Piper voice `en_US-hfc_female-medium`, about 0.3 s) -> speakers.
@@ -313,18 +389,33 @@ Installed now: `en_US-hfc_female-medium` (default), `en_GB-alba-medium`, `en_US-
 
 Served by the `server` container on `127.0.0.1:5000` (never exposed to the network). One conversation, one request at a time.
 
+The same server serves the web page at `/` and these endpoints (JSON unless noted):
+
 | Request | Body | Response |
 |---|---|---|
 | `GET /health` | | `{"ok":true,"agent":"Ashley","model":"qwen3-coder-30b"}` |
+| `GET /status` | | model, persona, voice, `reachable`, `busy`, and `context` (window, used, per-part token counts) |
 | `POST /chat` | `{"text":"...", "voice":false}` | `{"reply":"...","spoken":"...","tools":["write_file x.py => Created..."]}` |
-| `POST /reset` | | `{"ok":true}` |
+| `POST /chat/stream` | same | newline-delimited JSON events as she works: `thinking`, `usage`, `text`, `tool_start`, `tool_end`, then `final` (or `error` / `stopped`). Closing the connection stops the task |
+| `GET /history` | | the current conversation as turns (user text, her tool calls with results, her reply) |
+| `GET /inspect` | | the system prompt, tool names, the messages sent to the model, and the context numbers |
+| `POST /reset`, `POST /chats/new` | | saves the current chat to the archive and starts a new one |
+| `GET /chats` | | saved chats (id, title, time) |
+| `POST /chats/open` | `{"id":"20261014-093000"}` | saves the current chat and opens that one |
+| `GET /models` | | every model with `reachable`, plus `discovered` Ollama models that have no profile |
+| `POST /model` | `{"name":"yld"}` | switches model (conversation kept) |
+| `POST /models/add`, `POST /models/remove` | `{"model":"ashrp:latest","name":"ashrp",...}` / `{"name":"ashrp"}` | adds or removes a model saved in `memory\models.local.json` |
 | `GET /personas` | | `{"current":"ashley","personas":["ashley","mentor",...]}` |
 | `POST /persona` | `{"name":"mentor"}` | `{"ok":true,"current":"mentor"}`; `404` if there is no such persona |
-| `GET /voice` | | `{"voice":"en_US-hfc_female-medium"}` - the voice the client speaks with |
+| `GET /voice` | | `{"voice":"en_US-hfc_female-medium"}` - the voice used for speaking |
 | `POST /voice` | `{"name":"en_GB-alba-medium"}` | `{"ok":true,"voice":"..."}` (the agent only stores the choice) |
+| `GET /notes`, `GET /todo` | | her notes / todo items |
+| `GET /files?path=`, `GET /file?path=` | | a workspace folder listing / a text file (first 200 KB); paths stay inside the workspace |
+| `POST /stt`, `POST /tts`, `GET /voices`, `GET /voices/catalog?q=`, `POST /voices/add` | as the speech service | forwarded to the speech containers so the page talks to one address |
 
-Text-to-speech service (`127.0.0.1:9002`): `POST /tts {"text","voice"}` -> WAV, `GET /voices`, `GET /voices/catalog?q=...`,
-`POST /voices/add {"name"}`.
+The speech services can also be called directly: text-to-speech on `127.0.0.1:9002` (`POST /tts {"text","voice"}` -> WAV,
+`GET /voices`, `GET /voices/catalog?q=...`, `POST /voices/add {"name"}`) and speech-to-text on `127.0.0.1:9001` (`POST /stt` with an
+audio body -> `{"text"}`).
 
 Errors: `400` missing text, `502` model server problem (`{"error":...}`), `499` request cancelled. Closing the connection
 cancels the running task.
@@ -361,6 +452,12 @@ curl -X POST http://127.0.0.1:5000/chat -H "Content-Type: application/json" -d "
 | `docker` commands fail / "Docker Desktop is unable to start" | Start Docker Desktop and wait until it says running. |
 | Image build is slow / fails | First build downloads about 2 GB and needs internet. Re-run `ashley.cmd`. |
 | Voice client says `DOWN stt` right after start | Whisper is still downloading its model. Wait a minute and re-run. Check `docker logs voice-stt-1`. |
+| Web page shows "Can't reach the agent" | The server container is not running. Run `ashley-ui.cmd` (or `docker compose --profile server up -d server` in `ashley\`). |
+| Web page shows "Can't reach the model ..." | The model server is not running. Start `start-qwen30b.bat` (or Ollama), or pick another model in the drop-down. The dot beside the name is amber until it answers. |
+| Web page: "Microphone access was blocked" | Allow the microphone for `127.0.0.1:5000` in the browser's site settings (lock icon in the address bar), then hold the button again. It also fails if the page is opened with another address than `127.0.0.1` or `localhost`. |
+| Web page: "No sound heard from ..." | Wrong input chosen in Windows or the browser, or muted. Check the browser's site settings and Windows Settings > Sound > Input. |
+| Web page loads but is blank or an old version | Hard-refresh (Ctrl+F5). After changing the page's files, rebuild with `docker compose build` and restart the server container. |
+| A reply was not spoken | Check that **Speak replies** is ticked and the speech containers are running (`voice-tts-1`). The page shows the reason in a message above the box. Browsers may block sound until you have clicked once in the page. |
 | "Didn't catch that" | Nothing recorded or too quiet. Look at the line `Recorded Xs, loudest point N%` the client prints: under 1% means the wrong or muted microphone. Run `ashley-voice.cmd --test-mics` while speaking, then pick the live one with `--mic`. Also check Windows Settings > Sound > Input. |
 | "The microphone recorded silence" | Same cause. Note a headset mic cannot hear the PC's own speakers, so a "play a sound and record it" test only works with open speakers and a desk mic. |
 | She heard the wrong word | Add the word to `WHISPER_PROMPT`, or use a larger Whisper model (`WHISPER_MODEL=small.en`, rebuild `stt`). |
@@ -397,8 +494,12 @@ then edit its `config\` (name, persona, default model, `disabledTools`). It uses
 ## Known limits
 
 - The model server must be started by you; the container cannot start programs on the host.
-- Voice: push-to-talk only (no wake word); no streaming speech while she is still thinking; replies are spoken only once complete.
-- The voice client cannot switch models; use the console `/model`, then restart the API server.
+- Voice: hold-to-talk or push-to-talk only (no wake word); no streaming speech while she is still thinking; replies are spoken only once complete.
+- Replies are not shown word by word (tool calls and the token count are live). Streaming the model's words is a possible next step.
+- The Windows voice client cannot switch models; the web page can.
+- The web page's chat keeps the last 12 turns (the same limit as the console); older turns are only in the session log.
+- The web page cannot start or stop the 30B, because containers cannot run programs on the host. A small host-side helper would be needed.
+- One conversation at a time per server. Several browser tabs share the same conversation.
 - `web_search` scrapes a web page and can stop working; `web_fetch` on a known URL is the fallback.
 - Small Ollama models are unreliable on multi-step tool work. Qwen3-Coder-30B is the tested default.
 - **Parked: Unity / 3D character link and lip sync.** Not part of this version. If resumed, the old `AshleyLink` TCP hub
@@ -418,8 +519,16 @@ then edit its `config\` (name, persona, default model, `disabledTools`). It uses
 | Voice: **live microphone speech** (HyperX headset, 2026-10-13) | works: every question transcribed correctly, replies short and spoken, a file question used `list_files` correctly |
 | Voice and personality switching, adding a voice from the catalog | works (voice installed and spoken; switching persona changed her style) |
 | Models: 30B (full tests), `yld`, `qwen2.5-7b` (short tests) | 30B reliable; small models only on short tasks |
+| **Web page** (2026-10-14, browser pane): load, chat with live tool rows and meter, model switch (meter window changes), models manager with Ollama discovery, voices dialog with catalog search, saved chats (new, list, reopen, survives a server restart), inspect, Stop mid-command (process killed), history restored on reload | works |
+| Web page: audio path with a browser-format (WebM/Opus) recording through `/stt`, and `/tts` through the proxy | works (sentence transcribed correctly) |
+| Web page: blocked-microphone message from both the mic button and the space bar | works; recording indicator resets |
+| Web page: three recordings in a row against a **simulated microphone playing real speech** (space bar, space bar again with the cursor back in the empty box, then the mouse button) | works: red level bar while holding, cleared on release, mic released each time, transcribed, sent and answered |
+| Web page: space bar after a reply (found when you tried it) | fixed: the cursor returns to the message box after each reply, and the space bar now also records when the box is empty |
+| Host-header check (`Host: evil.example.com`) | refused with 400 |
 
-Not tested: very long web pages or binary downloads through `web_fetch`; models other than those above; running on a second PC.
+Not tested: **actual microphone recording in the browser** (the development browser blocks the microphone; try it with real speech and tell me how it behaves),
+the Microsoft Edge app-window launch from `ashley-ui.cmd`, very long web pages or binary downloads through `web_fetch`, models other than those above,
+running on a second PC.
 
 ---
 
@@ -427,4 +536,5 @@ Not tested: very long web pages or binary downloads through `web_fetch`; models 
 
 Built and verified on 2026-10-13. In order: console agent with tools and memory -> context trimming and honesty fixes (found by the
 long-job tests) -> HTTP API and voice containers -> voice client -> voice and personality switching -> microphone selection and diagnostics ->
-live microphone test passed. Lip sync / Unity link is parked. Wake word and streaming speech are not started.
+live microphone test passed -> web front end (2026-10-14): live events, context meter, model / persona / voice drop-downs, saved chats, inspect,
+side panels, hold-to-talk in the browser. Lip sync / Unity link is parked. Wake word and word-by-word streaming are not started.
