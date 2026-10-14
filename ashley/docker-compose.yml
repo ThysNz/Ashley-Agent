@@ -17,6 +17,7 @@ services:
       TZ: Pacific/Auckland
     volumes:
       - ./config:/agent/config:ro        # models.json, agent.json, personas
+      - ./secrets:/agent/secrets:ro      # optional read-only GitHub token (see secrets/README.md)
       - ./workspace:/agent/workspace     # the only folder she can write on the host
       - ./memory:/agent/memory           # notes, todo, session logs, backups
       - ashley-home:/home/agent          # pip/npm/git settings survive restarts
@@ -38,6 +39,7 @@ services:
       AGENT_PORT: "5000"
     volumes:
       - ./config:/agent/config:ro
+      - ./secrets:/agent/secrets:ro
       - ./workspace:/agent/workspace
       - ./memory:/agent/memory
       - ashley-home:/home/agent

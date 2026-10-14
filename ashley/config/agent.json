@@ -6,5 +6,8 @@
   "maxToolRounds": 80,
   "historyTurns": 12,
   "commandTimeoutSeconds": 120,
-  "maxNotesChars": 8000
+  "maxNotesChars": 8000,
+  // Author of the git commits she makes in the workspace (she commits, you push).
+  "gitName": "Ashley",
+  "gitEmail": "ashley@ai-agents.local"
 }

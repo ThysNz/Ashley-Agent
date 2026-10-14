@@ -9,3 +9,7 @@ obj/
 voice/tts/models/*
 !voice/tts/models/en_US-hfc_female-medium.onnx
 !voice/tts/models/en_US-hfc_female-medium.onnx.json
+
+# Secrets (tokens) never go in git; only the explanation file does.
+*/secrets/*
+!*/secrets/README.md

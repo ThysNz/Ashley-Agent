@@ -10,11 +10,15 @@ namespace AgentCore;
 
 public static class ShellTool
 {
+    // Who git commits are made as (from agent.json). Set once at startup.
+    public static string GitName { get; set; } = "";
+    public static string GitEmail { get; set; } = "";
+
     public static Tool Create(Sandbox sb, int defaultTimeoutSeconds)
     {
         return new Tool("run_command",
             "Run a shell command (bash) inside the Linux container and return its output and exit code. " +
-            "Use it to run code, tests and builds, use git, install packages (pip, npm, dotnet, sudo apt-get) and inspect the system. " +
+            "Use it to run code, tests and builds, use git (clone, pull, status, diff, add, commit - pushing is disabled), install packages (pip, npm, dotnet, sudo apt-get) and inspect the system. " +
             "Runs in the workspace unless workdir is set. Commands can't ask questions: pass -y style flags. " +
             "Long-running servers must be started in the background (e.g. 'nohup cmd > log.txt 2>&1 &').",
             Schema.Obj(("command", "string", "The command line.", true),
@@ -45,6 +49,16 @@ public static class ShellTool
         psi.Environment["NO_COLOR"] = "1";
         psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
         psi.Environment["DEBIAN_FRONTEND"] = "noninteractive";
+        if (GitName.Length > 0)
+        {
+            psi.Environment["GIT_AUTHOR_NAME"] = GitName;
+            psi.Environment["GIT_COMMITTER_NAME"] = GitName;
+        }
+        if (GitEmail.Length > 0)
+        {
+            psi.Environment["GIT_AUTHOR_EMAIL"] = GitEmail;
+            psi.Environment["GIT_COMMITTER_EMAIL"] = GitEmail;
+        }
 
         using var process = new Process { StartInfo = psi };
         var output = new StringBuilder();

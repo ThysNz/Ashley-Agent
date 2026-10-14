@@ -41,6 +41,9 @@ using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(15) };
 var sandbox = new Sandbox(paths.Workspace, paths.Memory);
 var memory = new MemoryStore(paths.Memory, config.MaxNotesChars);
 
+ShellTool.GitName = config.GitName;
+ShellTool.GitEmail = config.GitEmail;
+
 var tools = new List<Tool>();
 tools.AddRange(FileTools.Create(sandbox));
 tools.Add(ShellTool.Create(sandbox, config.CommandTimeoutSeconds));

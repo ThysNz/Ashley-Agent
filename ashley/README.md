@@ -165,6 +165,8 @@ F:\AI-Agents\
     config\                  agent.json, models.json, personas\*.md      (read-only inside the container)
     workspace\               the ONLY folder on the host she can change
     memory\                  notes.md, todo.md, state.json, sessions\, backups\, chats\, models.local.json
+    secrets\                 optional github_read_token (read-only, mounted read-only, never committed); see its README.md
+  docker\git\                git helpers baked into the image: read-only token helper and the push guard
 ```
 
 ---
@@ -228,6 +230,7 @@ All configuration is in `ashley\config\` and is mounted read-only; edit on the h
 | `commandTimeoutSeconds` | 120 | default for `run_command` |
 | `maxNotesChars` | 8000 | most recent notes included in each prompt |
 | `disabledTools` | [] | tool names to switch off, e.g. `["run_command","web_fetch"]` |
+| `gitName`, `gitEmail` | Ashley, ashley@ai-agents.local | who her git commits are made as (see [Git](#git-she-commits-you-push)) |
 
 ### `models.json`
 
@@ -428,9 +431,36 @@ curl -X POST http://127.0.0.1:5000/chat -H "Content-Type: application/json" -d "
 
 ---
 
+## Git (she commits, you push)
+
+She can use git on the projects in her workspace. The arrangement: **she commits locally, you push from your own PC**, and she can pull
+from your private repos with a read-only token.
+
+| What | How it works |
+|---|---|
+| **Commit** | Ask her ("commit these changes"). She runs `git status` and `git diff --stat`, tells you what changed, then commits. She commits **only when asked**, one clear message per change |
+| **Who the commits are from** | `gitName` / `gitEmail` in `config\agent.json` (default `Ashley <ashley@ai-agents.local>`), so her work is easy to tell apart in the history. Change them to your own name if you prefer |
+| **Pull / clone** | Public repos work as they are. For **private** repos create a read-only token and save it as `ashley\secrets\github_read_token` (steps in `ashley\secrets\README.md`). It is used only for `github.com`, and only for reading |
+| **Push** | **Turned off** inside the container. She tells you which repo folder and branch to push; you run `git push` from your own PC, in `F:\AI-Agents\ashley\workspace\<repo>` |
+| **Repos made on your PC** | Work as they are (the container accepts the workspace folders, which it otherwise reports as "dubious ownership") |
+
+How the push block works, honestly:
+- A pre-push hook refuses `git push` and says why. It is a **guard rail against accidents**, not a lock: she has a shell and could bypass it
+  (for example with `--no-verify`).
+- The real protection is that **the container holds no credential that can write to GitHub**: the only token it can see is read-only,
+  and your own GitHub login stays on your PC.
+- She cannot reach the `F:\AI-Agents` repository itself, only the workspace. This is for the projects she works on.
+- Her rules also say: never push, never force anything or rewrite history, never commit secrets.
+
+To give her read access: create the token as described, drop the file in `ashley\secrets\`, and she can pull straight away (no restart). To remove it,
+delete the file and revoke the token on GitHub. If a token expires, pulls from **public** repos also fail until it is replaced or deleted,
+because GitHub rejects an invalid token.
+
+---
+
 ## Safety and sandbox
 
-- The container sees only three host folders: `config` (read-only), `workspace` and `memory`. Nothing else on your
+- The container sees only these host folders: `config` and `secrets` (both read-only), `workspace` and `memory`. Nothing else on your
   drives is visible to her.
 - `run_command` is a real shell with `sudo` and internet access **inside the container**. She can install packages,
   run builds and delete things there. `apt-get` installs last until the image is rebuilt; `pip`/`npm` user installs
@@ -525,8 +555,11 @@ then edit its `config\` (name, persona, default model, `disabledTools`). It uses
 | Web page: three recordings in a row against a **simulated microphone playing real speech** (space bar, space bar again with the cursor back in the empty box, then the mouse button) | works: red level bar while holding, cleared on release, mic released each time, transcribed, sent and answered |
 | Web page: space bar after a reply (found when you tried it) | fixed: the cursor returns to the message box after each reply, and the space bar now also records when the box is empty |
 | Host-header check (`Host: evil.example.com`) | refused with 400 |
+| **Git** (2026-10-14): she created a repo and committed on request (author `Ashley <ashley@ai-agents.local>`); asked to push she checked and declined | works |
+| Git: read-only token helper (dummy token) | offers the token for `github.com` only, nothing for other hosts; the secrets folder is read-only |
+| Git: repo created on the PC used inside the container; push guard | works; `git push` refused, `--no-verify` bypasses the hook (as documented) |
 
-Not tested: **actual microphone recording in the browser** (the development browser blocks the microphone; try it with real speech and tell me how it behaves),
+Not tested: pulling a **private** repo with a real read-only token (needs your token), pushing from your PC, **actual microphone recording in the browser** (the development browser blocks the microphone; try it with real speech and tell me how it behaves),
 the Microsoft Edge app-window launch from `ashley-ui.cmd`, very long web pages or binary downloads through `web_fetch`, models other than those above,
 running on a second PC.
 

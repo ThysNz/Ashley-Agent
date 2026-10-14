@@ -18,6 +18,10 @@ public sealed class AgentConfig
     public int CommandTimeoutSeconds { get; set; } = 120;
     public int MaxNotesChars { get; set; } = 8000;
 
+    // Author of the git commits she makes in the workspace.
+    public string GitName { get; set; } = "Ashley";
+    public string GitEmail { get; set; } = "ashley@ai-agents.local";
+
     // Tool names to switch off for this agent, e.g. ["run_command", "web_fetch"].
     public List<string> DisabledTools { get; set; } = new();
 }

@@ -13,3 +13,6 @@ Dockerfile        text eol=lf
 
 # Voice models are binary.
 *.onnx            binary
+
+# Scripts that run inside the Linux container.
+docker/git/** text eol=lf

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Pushing is turned off inside the agent container (option "she commits, Thys pushes").
+# This is a guard rail against accidents, not a security boundary: the real protection is
+# that the container holds no credential that could write to GitHub.
+echo "Pushing is turned off for Ashley. Commit here, then ask Thys to run 'git push' from his own PC." >&2
+exit 1

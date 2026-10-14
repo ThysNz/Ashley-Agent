@@ -18,8 +18,19 @@ RUN apt-get update \
 
 RUN useradd -m -u 1000 -s /bin/bash agent \
  && echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent \
- && mkdir -p /agent/config /agent/workspace /agent/memory \
+ && mkdir -p /agent/config /agent/workspace /agent/memory /agent/secrets \
  && chown -R agent:agent /agent
+
+# Git for the agent ("she commits, Thys pushes"):
+#  - accept the mounted workspace folders (they show up as owned by another user)
+#  - use a read-only GitHub token for pulling, if /agent/secrets/github_read_token exists
+#  - refuse pushes (guard rail; the container also holds no credential that can write)
+COPY docker/git /opt/git
+RUN chmod +x /opt/git/git-credential-ashley /opt/git/hooks/pre-push \
+ && git config --system safe.directory '*' \
+ && git config --system init.defaultBranch main \
+ && git config --system core.hooksPath /opt/git/hooks \
+ && git config --system credential.https://github.com.helper /opt/git/git-credential-ashley
 
 COPY --from=build /out /opt/agent
 
