@@ -98,14 +98,14 @@ public static class ConfigLoader
 
     public static List<ModelProfile> LoadModels(Paths paths)
     {
+        // No models.json, or an empty list, is allowed: a new agent starts with no model and
+        // shows an "add a model" prompt (see ModelRegistry.Placeholder).
         var file = Path.Combine(paths.Config, "models.json");
-        if (!File.Exists(file)) throw new FileNotFoundException($"models.json not found in {paths.Config}");
+        if (!File.Exists(file)) return new List<ModelProfile>();
 
         using var doc = JsonDocument.Parse(File.ReadAllText(file),
             new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-        var models = doc.RootElement.GetProperty("models").Deserialize<List<ModelProfile>>(Options) ?? new();
-        if (models.Count == 0) throw new InvalidOperationException("models.json lists no models.");
-        return models;
+        return doc.RootElement.GetProperty("models").Deserialize<List<ModelProfile>>(Options) ?? new();
     }
 
     public static string LoadPersona(Paths paths, string name)

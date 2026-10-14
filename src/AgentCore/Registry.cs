@@ -34,7 +34,31 @@ public sealed class ModelRegistry
 
     private static bool SameName(string a, string b) => a.Equals(b, StringComparison.OrdinalIgnoreCase);
 
-    public IReadOnlyList<ModelProfile> All => _configured.Concat(_local).ToList();
+    // Shown when an agent has no models at all (a freshly cloned agent). It points nowhere, so the
+    // page reports "no model yet" instead of the agent failing to start.
+    public const string PlaceholderName = "(no model yet)";
+    private static readonly ModelProfile Placeholder = new()
+    {
+        Name = PlaceholderName,
+        Description = "No model is set up for this agent yet",
+        Provider = "openai",
+        BaseUrl = "http://127.0.0.1:9/v1",
+        Model = "none",
+        ContextSize = 8192,
+        SupportsTools = false,
+        Launch = "Open Manage models in the web page to add one from Ollama, or edit config\\models.json",
+    };
+
+    public static bool IsPlaceholder(ModelProfile p) => p.Name == PlaceholderName;
+
+    public IReadOnlyList<ModelProfile> All
+    {
+        get
+        {
+            var list = _configured.Concat(_local).ToList();
+            return list.Count == 0 ? new List<ModelProfile> { Placeholder } : list;
+        }
+    }
 
     public ModelProfile? Find(string? name) =>
         string.IsNullOrWhiteSpace(name) ? null : All.FirstOrDefault(m => SameName(m.Name, name.Trim()));

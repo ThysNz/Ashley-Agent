@@ -13,7 +13,9 @@ F:\AI-Agents\
   clients\VoiceClient\    Windows mic + speaker client (optional; the web page can do voice too)
   host\                   things that run on the Windows host, not in Docker
     start-qwen30b.bat       starts the 30B model (llama-server) on port 8080
-  ashley\                 first agent
+  new-agent.cmd           creates another agent cloned from ashley (no models, no memory): new-agent.cmd NAME
+  agent2\  agent3\        two more agents made with it (ports 5001 and 5002, no model yet)
+  ashley\                 first agent (port 5000)
     ashley-ui.cmd           open the web page (starts everything it needs)
     ashley.cmd              console chat (builds the image if needed)
     docker-compose.yml
@@ -23,7 +25,14 @@ F:\AI-Agents\
 ```
 
 Full documentation for Ashley (start-up steps, configuration, tools, voice, API, troubleshooting):
-[ashley\README.md](ashley/README.md).
+[ashley\README.md](ashley/README.md). The other agents work the same way; each has a short `README.md` of its own, and
+[how to add more](ashley/README.md#adding-another-agent) is one command.
+
+| Agent | Web page | Start | Model |
+|---|---|---|---|
+| Ashley | http://127.0.0.1:5000 | `ashley\ashley-ui.cmd` | Qwen3-Coder 30B and the Ollama models |
+| Agent2 | http://127.0.0.1:5001 | `agent2\agent2-ui.cmd` | none yet |
+| Agent3 | http://127.0.0.1:5002 | `agent3\agent3-ui.cmd` | none yet |
 
 ## Run Ashley
 

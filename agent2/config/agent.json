@@ -1,0 +1,13 @@
+{
+  // Which persona file in config/personas to use, and the default model name from models.json.
+  "name": "Agent2",
+  "persona": "agent2",
+  "defaultModel": "",
+  "maxToolRounds": 80,
+  "historyTurns": 12,
+  "commandTimeoutSeconds": 120,
+  "maxNotesChars": 8000,
+  // Author of the git commits made in the workspace (the agent commits, you push).
+  "gitName": "Agent2",
+  "gitEmail": "agent2@ai-agents.local"
+}

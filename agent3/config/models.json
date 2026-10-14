@@ -1,0 +1,7 @@
+{
+  // No models yet. Add some later, either:
+  //  - in the web page: click the chip button (Manage models) and add one installed in Ollama, or
+  //  - here: copy profiles from ..\..\ashley\config\models.json (that file explains the fields).
+  // Models run outside the container; contextSize must not exceed what the model server runs with.
+  "models": []
+}

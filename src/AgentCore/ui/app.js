@@ -135,8 +135,9 @@ function banner(s) {
   const b = $('#banner');
   if (!s) { b.hidden = true; return; }
   let text;
-  if (s.offline) text = 'Can\u2019t reach the agent. Is its container running? cd F:\\AI-Agents\\ashley ; docker compose --profile server up -d server';
-  else text = `Can\u2019t reach the model ${s.model.name}.` + (s.model.launch ? ` Start it with: ${s.model.launch}` : '');
+  if (s.offline) text = 'Can’t reach the agent. Is its container running? Start it with the -ui.cmd launcher in this agent’s folder.';
+  else if (s.model.placeholder) text = 'No model is set up for this agent yet. Click the chip button (Manage models) to add one from Ollama, or edit config\\models.json.';
+  else text = `Can’t reach the model ${s.model.name}.` + (s.model.launch ? ` Start it with: ${s.model.launch}` : '');
   b.replaceChildren(icon('alert'), h('span', { text }));
   b.hidden = false;
 }
@@ -147,6 +148,7 @@ async function refreshStatus() {
     S.status = s;
     $('#agent-name').textContent = s.agent;
     document.title = s.agent;
+    $('#input').placeholder = 'Message ' + s.agent;
     $('#dot').className = 'dot ' + (s.reachable ? 'ok' : 'bad');
     $('#dot').title = s.reachable ? 'Model server reachable' : s.problem;
     banner(s.reachable ? null : s);
@@ -707,7 +709,7 @@ async function openModels() {
 }
 
 function renderModels(d) {
-  const mine = d.models.map((m) => h('div', { class: 'item' + (m.name === d.current ? ' current' : '') },
+  const mine = d.models.filter((m) => !m.placeholder).map((m) => h('div', { class: 'item' + (m.name === d.current ? ' current' : '') },
     h('span', { class: 'dot ' + (m.reachable ? 'ok' : 'bad'), title: m.reachable ? 'Reachable' : 'Not reachable' }),
     h('div', { class: 'grow' },
       h('div', {}, h('b', { text: m.name }), ' ', m.local ? h('span', { class: 'pill', text: 'added here' }) : null, ' ', m.supportsTools ? null : h('span', { class: 'pill warn', text: 'no tools' })),
@@ -730,13 +732,15 @@ function renderModels(d) {
           try {
             await post('/models/add', { model: m.id, name: m.id.replace(/:latest$/, ''), supportsTools: m.tools !== false, think: m.thinking ? false : null, baseUrl: m.baseUrl });
             renderModels(await loadModels());
+            refreshStatus();
           } catch (e) { dlgError(e.message); }
         },
       }, 'Add')))
     : [h('div', { class: 'msgline', text: 'Nothing else is installed in Ollama, or Ollama isn\u2019t running.' })];
 
   openDlg('Models',
-    h('h4', {}, 'Your models'), ...mine,
+    h('h4', {}, 'Your models'),
+    ...(mine.length ? mine : [h('div', { class: 'msgline', text: 'No models yet. Add one from the Ollama list below, or edit config\\models.json.' })]),
     h('h4', {}, 'Installed in Ollama, not in your list'), ...found,
     h('p', { class: 'msgline', text: 'The 30B is started with host\\start-qwen30b.bat. Ollama models need Ollama running. Models in config\\models.json are edited on disk; models added here are saved in the memory folder.' }));
 }

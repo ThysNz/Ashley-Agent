@@ -95,7 +95,7 @@ public static class ApiServer
             return Results.Json(new
             {
                 agent = ctx.Config.Name,
-                model = new { name = p.Name, id = p.Model, provider = p.Provider, contextSize = p.ContextSize, launch = p.Launch },
+                model = new { name = p.Name, id = p.Model, provider = p.Provider, contextSize = p.ContextSize, launch = p.Launch, placeholder = ModelRegistry.IsPlaceholder(p) },
                 persona = agent.PersonaName,
                 voice = state.Voice,
                 reachable = problem == null,
@@ -253,10 +253,15 @@ public static class ApiServer
             // Ollama models that are installed but have no profile yet.
             var discovered = new List<object>();
             var used = profiles.Select(p => p.Model).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var baseUrl in profiles.Where(p => p.Provider.Equals("ollama", StringComparison.OrdinalIgnoreCase))
-                                            .Select(p => p.BaseUrl).Distinct())
+            var ollamaUrls = profiles.Where(p => p.Provider.Equals("ollama", StringComparison.OrdinalIgnoreCase))
+                                     .Select(p => p.BaseUrl).Distinct().ToList();
+            // A new agent has no Ollama profile yet: look at the standard address on the host.
+            if (ollamaUrls.Count == 0) ollamaUrls.Add("http://host.docker.internal:11434");
+            foreach (var baseUrl in ollamaUrls)
             {
-                if (!reachable.GetValueOrDefault("ollama|" + baseUrl)) continue;
+                if (!reachable.TryGetValue("ollama|" + baseUrl, out var up))
+                    up = await new LlmClient(ctx.Http, new ModelProfile { Provider = "ollama", BaseUrl = baseUrl }).PingAsync() == null;
+                if (!up) continue;
                 discovered.AddRange(await DiscoverOllama(ctx.Http, baseUrl, used));
             }
 
@@ -268,6 +273,7 @@ public static class ApiServer
                     name = p.Name, description = p.Description, provider = p.Provider, id = p.Model,
                     contextSize = p.ContextSize, supportsTools = p.SupportsTools, launch = p.Launch,
                     local = ctx.Models.IsLocal(p.Name),
+                    placeholder = ModelRegistry.IsPlaceholder(p),
                     reachable = reachable.GetValueOrDefault(p.Provider + "|" + p.BaseUrl),
                 }),
                 discovered,
@@ -290,7 +296,7 @@ public static class ApiServer
             finally { gate.Release(); }
         });
 
-        app.MapPost("/models/add", (AddModelRequest r) =>
+        app.MapPost("/models/add", async (AddModelRequest r) =>
         {
             var provider = (r.Provider ?? "ollama").ToLowerInvariant();
             var baseUrl = r.BaseUrl ?? ctx.Models.All.FirstOrDefault(p => p.Provider.Equals(provider, StringComparison.OrdinalIgnoreCase))?.BaseUrl
@@ -308,7 +314,22 @@ public static class ApiServer
                 Launch = provider == "ollama" ? "Ollama must be running on the host (ollama serve)" : "",
             };
             var error = ctx.Models.AddLocal(profile);
-            return error == null ? Results.Json(new { ok = true, name = profile.Name }) : Results.BadRequest(new { error });
+            if (error != null) return Results.BadRequest(new { error });
+
+            // First real model for a new agent: start using it straight away.
+            if (ModelRegistry.IsPlaceholder(agent.Client.Profile))
+            {
+                await gate.WaitAsync();
+                try
+                {
+                    agent.SetClient(new LlmClient(ctx.Http, profile));
+                    state.Model = profile.Name;
+                    ConfigLoader.SaveState(ctx.Paths, state);
+                    pingModel = null;
+                }
+                finally { gate.Release(); }
+            }
+            return Results.Json(new { ok = true, name = profile.Name });
         });
 
         app.MapPost("/models/remove", (NameRequest r) =>

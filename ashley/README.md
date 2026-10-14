@@ -452,9 +452,26 @@ How the push block works, honestly:
 - She cannot reach the `F:\AI-Agents` repository itself, only the workspace. This is for the projects she works on.
 - Her rules also say: never push, never force anything or rewrite history, never commit secrets.
 
-To give her read access: create the token as described, drop the file in `ashley\secrets\`, and she can pull straight away (no restart). To remove it,
-delete the file and revoke the token on GitHub. If a token expires, pulls from **public** repos also fail until it is replaced or deleted,
-because GitHub rejects an invalid token.
+To give her read access: run `ashley\set-github-token.cmd` and paste the token (or save it as `ashley\secrets\github_read_token`); she can pull straight away
+(no restart). To remove it, delete the file and revoke the token on GitHub. If a token expires, pulls from **public** repos also fail until it is replaced or
+deleted, because GitHub rejects an invalid token.
+
+### Her projects: the working pattern
+
+Projects she works on are git clones inside her workspace, one folder per repo. Currently:
+
+| Folder | Repo | Notes |
+|---|---|---|
+| `ashley\workspace\RA-Code-Reader` | `ThysNZ/RA-Code-Reader` (private), branch `main` | cloned by her container with the read-only token; she is told about it in her notes |
+| `ashley\workspace\RA-Code-Reader-download-OLD` | (old zip download) | kept only as a backup, with `rm001_-en-p.pdf` that is not in the repo. Delete it when you are happy |
+
+The loop:
+1. Ask her to make a change and commit it. She commits on `main` or a branch you name, as `Ashley <ashley@ai-agents.local>`.
+2. Review it on your PC if you like: `cd F:\AI-Agents\ashley\workspace\RA-Code-Reader`, then `git log -3` and `git show`.
+3. **Push from there with your own git** (`git push`). Your normal GitHub login is used; the container's token cannot push.
+4. To bring her up to date after you or someone else pushes, tell her to `git pull`.
+
+To add another repo, tell her to `git clone https://github.com/<you>/<repo>.git` in her workspace (the token must be allowed to read it), and add a line to her notes.
 
 ---
 
@@ -515,9 +532,26 @@ On Linux/macOS hosts the `.cmd` and `.bat` files do not apply: run the `docker c
 
 ## Adding another agent
 
-Copy `ashley\` to a new folder next to it (for example `coder\`), change the service names and ports in its `docker-compose.yml`,
-then edit its `config\` (name, persona, default model, `disabledTools`). It uses the same image and can share the voice containers
-(give its API server a different port).
+Run the generator from `F:\AI-Agents`:
+
+```
+new-agent.cmd coder
+new-agent.cmd writer -Port 5003 -DisplayName "Writer"
+```
+
+It creates a folder next to `ashley\` that is cloned from her setup **without** her memory, notes, chats, workspace, token or models:
+
+| What | How it is set up |
+|---|---|
+| Name and persona | `config\agent.json` and `config\personas\<name>.md` (her persona text with the name swapped; edit it to change who the agent is) |
+| Port | the next free one from 5001, shown in the generated `README.md`; each agent has its own web page and API |
+| Model | **none**. The agent starts with a "no model yet" banner. Add one in its web page (chip button, then **Add** beside a model installed in Ollama; it switches to it straight away) or in `config\models.json` |
+| Launchers | `<name>-ui.cmd` (web page), `<name>.cmd` (console), `<name>-voice.cmd` (Windows voice client), `<name>-stop.cmd` (stops this agent only) |
+| Workspace, memory, secrets | its own empty folders; `set-github-token.cmd` for a read-only token of its own |
+| Shared | the Docker image and the speech containers (stopping those with `ashley\stop-voice.cmd` affects every agent) |
+
+Currently: **ashley** (5000), **agent2** (5001), **agent3** (5002). To rename an agent, change `name`, `gitName` and the persona file in its `config\`,
+and the launcher file names if you want them to match; its folder name is only used for the Docker names, so leave it.
 
 ---
 
@@ -558,6 +592,9 @@ then edit its `config\` (name, persona, default model, `disabledTools`). It uses
 | **Git** (2026-10-14): she created a repo and committed on request (author `Ashley <ashley@ai-agents.local>`); asked to push she checked and declined | works |
 | Git: read-only token helper (dummy token) | offers the token for `github.com` only, nothing for other hosts; the secrets folder is read-only |
 | Git: repo created on the PC used inside the container; push guard | works; `git push` refused, `--no-verify` bypasses the hook (as documented) |
+| **New agents** (2026-10-14): `new-agent.cmd` created `agent2` and `agent3`; both started with "no model yet" next to Ashley on ports 5001/5002 | works |
+| New agent: add a model from the web page (Ollama list) | the agent switched to it at once, the banner cleared, and it answered as "Agent2" |
+| New agent: nothing of Ashley's copied (memory, notes, chats, workspace, token) | confirmed; only the name and persona wording are shared |
 
 Not tested: pulling a **private** repo with a real read-only token (needs your token), pushing from your PC, **actual microphone recording in the browser** (the development browser blocks the microphone; try it with real speech and tell me how it behaves),
 the Microsoft Edge app-window launch from `ashley-ui.cmd`, very long web pages or binary downloads through `web_fetch`, models other than those above,
