@@ -44,14 +44,18 @@ var memory = new MemoryStore(paths.Memory, config.MaxNotesChars);
 ShellTool.GitName = config.GitName;
 ShellTool.GitEmail = config.GitEmail;
 
+// Skills: folders with a SKILL.md, from this agent's skills folder and the shared one.
+var skills = new SkillStore(paths.Skills, paths.SharedSkills);
+
 var tools = new List<Tool>();
 tools.AddRange(FileTools.Create(sandbox));
 tools.Add(ShellTool.Create(sandbox, config.CommandTimeoutSeconds));
 tools.AddRange(WebTools.Create(http));
 tools.AddRange(MemoryTools.Create(memory));
+tools.Add(SkillTool.Create(skills));
 tools.RemoveAll(t => config.DisabledTools.Contains(t.Name, StringComparer.OrdinalIgnoreCase));
 
-var agent = new AgentLoop(config, paths, sandbox, memory, tools, new LlmClient(http, profile), personaName, personaText);
+var agent = new AgentLoop(config, paths, sandbox, memory, skills, tools, new LlmClient(http, profile), personaName, personaText);
 
 // Ctrl+C stops the current turn; pressed while idle it exits.
 CancellationTokenSource? turnCts = null;
@@ -162,8 +166,15 @@ async Task<bool> HandleCommand(string line)
                 /tools           list tools       /notes           show long-term notes
                 /todo            show task list   /reset           forget this conversation
                 /status          show settings    /quit            exit
+                /skills          list skills      /<skill> text    run a skill on your request
                 Anything else is sent to the agent. Ctrl+C stops a running task.
                 """);
+            break;
+
+        case "/skills":
+            if (agent.Skills.All.Count == 0) { Ui.Say("(no skills installed - see skills\\README.md)"); break; }
+            foreach (var s in agent.Skills.All)
+                Ui.Say($"  /{s.Name,-22} {(s.Source == "shared" ? "shared" : "agent ")}  {Text.Clip(s.Description, 90)}");
             break;
 
         case "/models":
@@ -224,7 +235,13 @@ async Task<bool> HandleCommand(string line)
             break;
 
         default:
-            Ui.Warn($"Unknown command {cmd}. Try /help.");
+            // "/skill-name your request" runs that skill.
+            if (agent.Skills.Find(cmd) is { UserInvocable: true })
+            {
+                await RunOnce(line);
+                break;
+            }
+            Ui.Warn($"Unknown command {cmd}. Try /help or /skills.");
             break;
     }
     return true;

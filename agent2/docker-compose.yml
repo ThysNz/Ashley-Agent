@@ -18,6 +18,8 @@ services:
     volumes:
       - ./config:/agent/config:ro        # models.json, agent.json, personas
       - ./secrets:/agent/secrets:ro      # optional read-only GitHub token (see secrets/README.md)
+      - ./skills:/agent/skills:ro        # this agent's own skills (folders with a SKILL.md)
+      - ../skills:/agent/shared-skills:ro  # skills shared by every agent
       - ./workspace:/agent/workspace     # the only folder she can write on the host
       - ./memory:/agent/memory           # notes, todo, session logs, backups
       - agent2-home:/home/agent          # pip/npm/git settings survive restarts
@@ -40,6 +42,8 @@ services:
     volumes:
       - ./config:/agent/config:ro
       - ./secrets:/agent/secrets:ro
+      - ./skills:/agent/skills:ro        # this agent's own skills (folders with a SKILL.md)
+      - ../skills:/agent/shared-skills:ro  # skills shared by every agent
       - ./workspace:/agent/workspace
       - ./memory:/agent/memory
       - agent2-home:/home/agent

@@ -56,12 +56,16 @@ public sealed class Paths
     public string Config { get; }
     public string Workspace { get; }
     public string Memory { get; }
+    public string Skills { get; }          // this agent's own skills (read-only mount)
+    public string SharedSkills { get; }    // skills shared by every agent (read-only mount)
 
     public Paths()
     {
         Config = Full(Environment.GetEnvironmentVariable("AGENT_CONFIG") ?? "config");
         Workspace = Full(Environment.GetEnvironmentVariable("AGENT_WORKSPACE") ?? "workspace");
         Memory = Full(Environment.GetEnvironmentVariable("AGENT_MEMORY") ?? "memory");
+        Skills = Full(Environment.GetEnvironmentVariable("AGENT_SKILLS") ?? "skills");
+        SharedSkills = Full(Environment.GetEnvironmentVariable("AGENT_SHARED_SKILLS") ?? "shared-skills");
         Directory.CreateDirectory(Workspace);
         Directory.CreateDirectory(Memory);
     }

@@ -381,6 +381,30 @@ public static class ApiServer
             return Results.Json(new { ok = true, voice = name });
         });
 
+        // ---- skills ------------------------------------------------------
+
+        app.MapGet("/skills", () => Results.Json(new
+        {
+            skills = agent.Skills.All.Select(s => new
+            {
+                name = s.Name,
+                description = s.Description,
+                source = s.Source,
+                argumentHint = s.ArgumentHint,
+                userInvocable = s.UserInvocable,
+                modelInvocable = s.ModelInvocable,
+                files = s.Files,
+            }),
+        }));
+
+        app.MapGet("/skill", (string? name) =>
+        {
+            var skill = agent.Skills.Find(name);
+            return skill == null
+                ? Results.NotFound(new { error = $"no skill called '{name}'" })
+                : Results.Json(new { name = skill.Name, source = skill.Source, dir = skill.Dir, text = skill.Raw, files = skill.Files });
+        });
+
         // ---- side panels -------------------------------------------------
 
         app.MapGet("/notes", () =>
@@ -545,7 +569,8 @@ public static class ApiServer
 
         foreach (var m in messages.ToList())
         {
-            if (m.Role == "user") { open = null; turns.Add(new HistTurn { Role = "user", Text = m.Content }); continue; }
+            // A message run with /skill-name is stored with the skill's full text; the page shows what was typed.
+            if (m.Role == "user") { open = null; turns.Add(new HistTurn { Role = "user", Text = SkillStore.DisplayText(m.Content) }); continue; }
 
             if (m.Role == "assistant")
             {

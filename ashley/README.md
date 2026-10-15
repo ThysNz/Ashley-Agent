@@ -7,7 +7,7 @@ language model runs **outside** the container on the host PC, so everything else
 a console, or the Windows voice client.
 
 Contents: [Start everything](#start-everything) | [Architecture](#architecture) | [Folders](#folders) |
-[Web page](#web-page) | [Console commands](#console-commands) | [Tools](#tools) | [Configuration](#configuration) |
+[Web page](#web-page) | [Console commands](#console-commands) | [Tools](#tools) | [Skills](#skills) | [Configuration](#configuration) |
 [Memory and files](#memory-and-files) | [Voice client](#voice-client-windows) | [HTTP API](#http-api) | [Safety](#safety-and-sandbox) |
 [Troubleshooting](#troubleshooting) | [Moving to another PC](#moving-to-another-pc) | [Limits](#known-limits)
 
@@ -130,10 +130,14 @@ Health URLs: `http://127.0.0.1:5000/health`, `:9001/health`, `:9002/health`.
   speaker access needs the Windows client.
 
 ### The agent loop
-1. Your message is added to the history.
-2. The model is called with the system prompt (persona, environment, rules, notes) and the tool list.
+1. Your message is added to the history (if it starts with `/skill-name`, the skill's instructions are added with it).
+2. The model is called with the system prompt (persona, environment, rules, skills list, notes) and the tool list.
 3. If it asks for tools, they run, results go back to the model, repeat (up to `maxToolRounds`, default 80).
 4. When it answers without tools, that answer is returned.
+
+Two safety nets help smaller models: if a short reply only **announces** the next step ("Checking the repo..." or, after tools have run, "Let me stage these
+files."), she is told once or twice to go ahead and do it (that exchange is not kept in the history); and if the **same call fails the same way** five times in
+one turn she stops, says what keeps failing, and waits for you instead of looping until the round limit.
 
 The history is trimmed by turns (`historyTurns`, default 12) and by size. The size limit learns characters-per-token
 from the model server's own counts and shrinks old tool output in stages, so a long job cannot overflow the model's
@@ -149,6 +153,9 @@ F:\AI-Agents\
   Dockerfile                 the shared image (.NET SDK + git, python, node, ripgrep, build tools, sudo)
   src\AgentCore\             agent source (C#): loop, tools, memory, model clients, HTTP API, speech clean-up
   src\AgentCore\ui\          the web page: index.html, app.css, app.js (no libraries, no build step, works offline)
+  new-agent.cmd              creates another agent cloned from this one (see "Adding another agent")
+  add-skill.cmd              installs a skill (folder, .zip or SKILL.md) for every agent or one agent
+  skills\                    skills shared by every agent (README.md explains the format; starter skills included)
   host\
     start-qwen30b.bat        starts the 30B model on the host
   voice\
@@ -166,6 +173,7 @@ F:\AI-Agents\
     workspace\               the ONLY folder on the host she can change
     memory\                  notes.md, todo.md, state.json, sessions\, backups\, chats\, models.local.json
     secrets\                 optional github_read_token (read-only, mounted read-only, never committed); see its README.md
+    skills\                  skills for this agent only (read-only inside the container)
   docker\git\                git helpers baked into the image: read-only token helper and the push guard
 ```
 
@@ -182,6 +190,7 @@ Anything not starting with `/` is sent to Ashley.
 | `/model <name>` | switch model; the conversation is kept; the choice is saved in `memory\state.json` |
 | `/personas`, `/persona <name>` | list / switch persona |
 | `/tools` | list her tools |
+| `/skills`, `/<skill> your request` | list skills / run a skill on your request, e.g. `/commit-changes demo` |
 | `/notes` | show her long-term notes |
 | `/todo` | show her task list |
 | `/reset` | forget this conversation (notes and files untouched) |
@@ -207,9 +216,73 @@ One-shot mode, no chat: `docker compose run --rm ashley --prompt "list the files
 | `web_fetch`, `web_search` | read a web page as text; search (DuckDuckGo page scrape - can break) |
 | `remember`, `forget` | long-term notes about Thys, projects, preferences (not task logs) |
 | `todo` | task list for multi-step work (add / done / undone / remove / clear / list) |
+| `skill` | load a saved procedure (a skill) and follow it, or read one of a skill's supporting files; see [Skills](#skills) |
 
 The file tools only work inside `workspace`; paths are relative to it. `run_command` is not limited by that - the
 container is the sandbox (see [Safety](#safety-and-sandbox)).
+
+---
+
+## Skills
+
+A skill is a saved procedure for a kind of task, in **the same format Claude uses**: a folder with a `SKILL.md` (a short header with a `name` and a
+`description`, then the instructions) and, optionally, extra files such as reference documents and scripts. Skills written for Claude drop straight in.
+
+```
+skills\commit-changes\
+  SKILL.md               header (name, description) + instructions
+  reference\...          optional documents the instructions point to
+  scripts\...            optional scripts she can run
+```
+
+### Where they live
+
+| Folder | Available to |
+|---|---|
+| `F:\AI-Agents\skills\<name>\` | **every agent** |
+| `<agent>\skills\<name>\` (e.g. `ashley\skills\`) | that agent only; if the names clash, the agent's own wins |
+
+Both folders are mounted **read-only** into the container, so an agent cannot change or add skills herself. New skills are picked up within a couple of
+seconds, **with no restart**.
+
+### Adding a skill
+
+1. **Drop the folder in** one of the folders above.
+2. **Or run the helper** from `F:\AI-Agents`: `add-skill.cmd C:\Downloads\my-skill` (a folder, a `.zip`, or a lone `SKILL.md` with a `name:` in its header).
+   Add `-Agent agent2` to install for one agent only, `-Force` to replace one (the old version is kept in a `skills-backup` folder next to `skills`).
+   It checks the header first and prints clear errors.
+3. **Or ask her to write one:** "write a skill for ...". She drafts it into `workspace\skill-drafts\<name>\` and runs a validator on it; you install it with
+   `add-skill.cmd`. She tells you it is a draft; she cannot install it.
+
+### Using a skill
+
+- **By itself:** her prompt lists every skill's name and description. When a request matches, she loads the skill with the `skill` tool and follows it.
+- **By name:** type `/skill-name your request` in the page or the console. The page suggests names as you type `/` (Tab or Enter completes), and the chat shows
+  just what you typed. The skill's full text is sent to the model with your request.
+- **The Skills button** in the page lists what is installed with a Use and a View button for each; `/skills` does the same in the console.
+- Header options: `disable-model-invocation: true` makes a skill you-only (she will not load it herself); `user-invocable: false` makes it agent-only.
+
+### Starter skills (in `F:\AI-Agents\skills`)
+
+| Skill | What it does |
+|---|---|
+| `commit-changes` | reviews the changes in a repo, shows what changed, stages and commits with a clear message, **never pushes**, and tells you what to push |
+| `write-a-skill` | drafts a new skill into the workspace (with a format reference and a validator script) for you to install |
+
+### Compatibility with Claude's skills
+
+Used: `name`, `description`, `argument-hint`, `disable-model-invocation`, `user-invocable`, supporting files, and `$ARGUMENTS`, `$ARGUMENTS[N]` and
+`${CLAUDE_SKILL_DIR}` in the text. When a skill names Claude's tools (Bash, Read, Write, Edit, Grep, Glob, WebFetch, WebSearch) she is told to use her own
+equivalents. **Not supported:** `allowed-tools`, `model`, `context: fork` (subagents), hooks, and `!` command injection; those header fields are ignored.
+
+### Tips
+
+- **The description is what matters.** She decides from it alone, so say what the skill does *and when to use it*.
+- **Be explicit for smaller models.** Weaker models skip steps or ask for permission. Spell out folders, which tool setting to use (for example
+  `run_command` with `workdir`), and "do not ask for confirmation" where the user running the skill is the confirmation. The two starter skills went through
+  exactly that.
+- **Only install skills you trust.** A skill is instructions she follows, and she has a shell; read a skill from the internet before installing it.
+- The skill list and each loaded skill count towards the context meter (the list is capped at about 6,000 characters).
 
 ---
 
@@ -412,6 +485,8 @@ The same server serves the web page at `/` and these endpoints (JSON unless note
 | `POST /persona` | `{"name":"mentor"}` | `{"ok":true,"current":"mentor"}`; `404` if there is no such persona |
 | `GET /voice` | | `{"voice":"en_US-hfc_female-medium"}` - the voice used for speaking |
 | `POST /voice` | `{"name":"en_GB-alba-medium"}` | `{"ok":true,"voice":"..."}` (the agent only stores the choice) |
+| `GET /skills` | | installed skills: name, description, source (`agent` / `shared`), argument hint, who can run it, files |
+| `GET /skill?name=` | | one skill's full `SKILL.md` text and file list |
 | `GET /notes`, `GET /todo` | | her notes / todo items |
 | `GET /files?path=`, `GET /file?path=` | | a workspace folder listing / a text file (first 200 KB); paths stay inside the workspace |
 | `POST /stt`, `POST /tts`, `GET /voices`, `GET /voices/catalog?q=`, `POST /voices/add` | as the speech service | forwarded to the speech containers so the page talks to one address |
@@ -477,7 +552,7 @@ To add another repo, tell her to `git clone https://github.com/<you>/<repo>.git`
 
 ## Safety and sandbox
 
-- The container sees only these host folders: `config` and `secrets` (both read-only), `workspace` and `memory`. Nothing else on your
+- The container sees only these host folders: `config`, `secrets`, `skills` and the shared `skills` (all read-only), `workspace` and `memory`. Nothing else on your
   drives is visible to her.
 - `run_command` is a real shell with `sudo` and internet access **inside the container**. She can install packages,
   run builds and delete things there. `apt-get` installs last until the image is rebuilt; `pip`/`npm` user installs
@@ -504,6 +579,10 @@ To add another repo, tell her to `git clone https://github.com/<you>/<repo>.git`
 | Web page: "Microphone access was blocked" | Allow the microphone for `127.0.0.1:5000` in the browser's site settings (lock icon in the address bar), then hold the button again. It also fails if the page is opened with another address than `127.0.0.1` or `localhost`. |
 | Web page: "No sound heard from ..." | Wrong input chosen in Windows or the browser, or muted. Check the browser's site settings and Windows Settings > Sound > Input. |
 | Web page loads but is blank or an old version | Hard-refresh (Ctrl+F5). After changing the page's files, rebuild with `docker compose build` and restart the server container. |
+| Skills button is empty / "No skills installed yet" | The skills folders are not mounted: this agent's container predates the skills feature. Run its `-ui.cmd` (it recreates the container with the new mounts), or `docker compose build` and `docker compose --profile server up -d --force-recreate server` in the agent's folder |
+| A skill I dropped in does not appear | It needs a `SKILL.md` (not `skill.txt`) directly inside its own folder, with a valid `name`. Check with `python3` on the validator: ask any agent to run `write-a-skill`'s `scripts/validate.py` on it, or install it with `add-skill.cmd`, which reports the problem |
+| She ignores a skill, or does only part of it | Smaller models do this. Make the skill's steps more explicit, run it by name (`/skill-name ...`) instead of waiting for her to pick it, or use the 30B |
+| `/skill-name` is sent as plain text | That name is not installed for this agent, or the skill is marked agent-only (`user-invocable: false`). Check the Skills list |
 | A reply was not spoken | Check that **Speak replies** is ticked and the speech containers are running (`voice-tts-1`). The page shows the reason in a message above the box. Browsers may block sound until you have clicked once in the page. |
 | "Didn't catch that" | Nothing recorded or too quiet. Look at the line `Recorded Xs, loudest point N%` the client prints: under 1% means the wrong or muted microphone. Run `ashley-voice.cmd --test-mics` while speaking, then pick the live one with `--mic`. Also check Windows Settings > Sound > Input. |
 | "The microphone recorded silence" | Same cause. Note a headset mic cannot hear the PC's own speakers, so a "play a sound and record it" test only works with open speakers and a desk mic. |
@@ -547,7 +626,7 @@ It creates a folder next to `ashley\` that is cloned from her setup **without** 
 | Port | the next free one from 5001, shown in the generated `README.md`; each agent has its own web page and API |
 | Model | **none**. The agent starts with a "no model yet" banner. Add one in its web page (chip button, then **Add** beside a model installed in Ollama; it switches to it straight away) or in `config\models.json` |
 | Launchers | `<name>-ui.cmd` (web page), `<name>.cmd` (console), `<name>-voice.cmd` (Windows voice client), `<name>-stop.cmd` (stops this agent only) |
-| Workspace, memory, secrets | its own empty folders; `set-github-token.cmd` for a read-only token of its own |
+| Workspace, memory, secrets, skills | its own empty folders (it also sees the shared `skills\`); `set-github-token.cmd` for a read-only token of its own |
 | Shared | the Docker image and the speech containers (stopping those with `ashley\stop-voice.cmd` affects every agent) |
 
 Currently: **ashley** (5000), **agent2** (5001), **agent3** (5002). To rename an agent, change `name`, `gitName` and the persona file in its `config\`,
@@ -566,6 +645,8 @@ and the launcher file names if you want them to match; its folder name is only u
 - One conversation at a time per server. Several browser tabs share the same conversation.
 - `web_search` scrapes a web page and can stop working; `web_fetch` on a known URL is the fallback.
 - Small Ollama models are unreliable on multi-step tool work. Qwen3-Coder-30B is the tested default.
+- Skills: Claude's subagents, hooks, `allowed-tools`, `model` and `!` command injection are not supported (see [Skills](#skills)). The full commit skill was only
+  completed end to end on small models (8B); it has not yet been run on the 30B. Skills can be added and read but not edited from the page.
 - **Parked: Unity / 3D character link and lip sync.** Not part of this version. If resumed, the old `AshleyLink` TCP hub
   (`127.0.0.1:6789`, JSON events: state, transcript, reply, amplitude) in `F:\Claude\Projects\Ashley\TalkToAshleyByVoice` is the starting
   point, and the voice client is where the audio level would be computed.
@@ -583,6 +664,11 @@ and the launcher file names if you want them to match; its folder name is only u
 | Voice: **live microphone speech** (HyperX headset, 2026-10-13) | works: every question transcribed correctly, replies short and spoken, a file question used `list_files` correctly |
 | Voice and personality switching, adding a voice from the catalog | works (voice installed and spoken; switching persona changed her style) |
 | Models: 30B (full tests), `yld`, `qwen2.5-7b` (short tests) | 30B reliable; small models only on short tasks |
+| **Skills** (2026-10-15): listing, viewing, hot-reload of a skill dropped in on the PC (no restart), `$ARGUMENTS` substitution, read-only mounts, chat shows only `/name args`, page dialog and `/` suggestions, console `/skills` | works |
+| Skills: `/commit-changes demo` on `yld` (8B) | status, `git add`, commit as the agent, log, closing hint; tree left clean (needed two rewrites of the skill's wording for the small model) |
+| Skills: `/write-a-skill` on `yld`, then the validator script | drafted a skill, ran the validator, fixed what it reported, said it was a draft |
+| Skills: `add-skill.cmd` with a folder, a lone `SKILL.md` and a zip; duplicate, `-Force` (backup kept outside the skills folder), missing header, empty folder, bad agent, missing source | all behave, with clear errors |
+| Skills: small-model failure modes (announces a step and stops; asks for permission; loops on a wrong skill name) | a "go ahead" nudge and a loop guard (stops after 5 identical failures) were added; `qwen2.5:7b` and the 14B coder still finish poorly |
 | **Web page** (2026-10-14, browser pane): load, chat with live tool rows and meter, model switch (meter window changes), models manager with Ollama discovery, voices dialog with catalog search, saved chats (new, list, reopen, survives a server restart), inspect, Stop mid-command (process killed), history restored on reload | works |
 | Web page: audio path with a browser-format (WebM/Opus) recording through `/stt`, and `/tts` through the proxy | works (sentence transcribed correctly) |
 | Web page: blocked-microphone message from both the mic button and the space bar | works; recording indicator resets |

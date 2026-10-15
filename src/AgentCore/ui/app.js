@@ -282,6 +282,7 @@ const setStatus = (a, text) => a.status.replaceChildren(h('span', { class: 'spin
 function toolIcon(name) {
   if (name === 'run_command') return 'terminal';
   if (name.startsWith('web_')) return 'globe';
+  if (name === 'skill') return 'book';
   if (['remember', 'forget', 'todo'].includes(name)) return 'check';
   return 'file';
 }
@@ -449,10 +450,78 @@ $('#composer').addEventListener('submit', (e) => {
 
 const input = $('#input');
 function autoGrow() { input.style.height = 'auto'; input.style.height = Math.min(180, input.scrollHeight) + 'px'; }
-input.addEventListener('input', autoGrow);
+input.addEventListener('input', () => { autoGrow(); updateSlash(); });
 input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#composer').requestSubmit(); }
+  const open = !$('#slash').hidden;
+  if (open && e.key === 'Escape') { $('#slash').hidden = true; return; }
+  if (open && e.key === 'Tab') { e.preventDefault(); pickSkill($('#slash .opt.on b').textContent.slice(1)); return; }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    // "/com" + Enter completes the suggestion; a full skill name (or any other text) is sent.
+    const first = open ? $('#slash .opt.on b') : null;
+    if (first && input.value.trim().toLowerCase() !== first.textContent.toLowerCase()) { pickSkill(first.textContent.slice(1)); return; }
+    $('#composer').requestSubmit();
+  }
 });
+
+// ---------- skills: "/name" suggestions and the Skills dialog ----------------------------------------
+
+async function loadSkills() {
+  try { S.skills = (await get('/skills')).skills; } catch { S.skills = S.skills || []; }
+  S.skillsAt = Date.now();
+}
+
+function updateSlash() {
+  const box = $('#slash');
+  const m = /^\/([A-Za-z0-9._-]*)$/.exec(input.value);
+  if (!m) { box.hidden = true; return; }
+  if (!S.skillsAt || Date.now() - S.skillsAt > 10000) loadSkills().then(updateSlash); // pick up new skills
+  const q = m[1].toLowerCase();
+  const matches = (S.skills || []).filter((s) => s.userInvocable && s.name.toLowerCase().startsWith(q)).slice(0, 8);
+  if (!matches.length) { box.hidden = true; return; }
+  box.replaceChildren(...matches.map((s, i) => h('div', { class: 'opt' + (i === 0 ? ' on' : ''), onmousedown: (e) => { e.preventDefault(); pickSkill(s.name); } },
+    h('b', { text: '/' + s.name }), h('span', { text: (s.argumentHint ? s.argumentHint + ' \u2013 ' : '') + s.description }))));
+  box.hidden = false;
+}
+
+function pickSkill(name) {
+  input.value = '/' + name + ' ';
+  $('#slash').hidden = true;
+  autoGrow();
+  input.focus();
+}
+
+async function openSkills() {
+  await loadSkills();
+  const skills = S.skills || [];
+  const rows = skills.map((s) => h('div', { class: 'item' },
+    h('div', { class: 'grow' },
+      h('div', {}, h('b', { text: '/' + s.name }), ' ', h('span', { class: 'pill', text: s.source === 'shared' ? 'shared' : 'this agent' }), ' ',
+        s.modelInvocable ? null : h('span', { class: 'pill warn', text: 'you run it' }), s.userInvocable ? null : h('span', { class: 'pill', text: 'agent only' })),
+      h('div', { class: 'sub', style: 'white-space:normal', text: (s.argumentHint ? s.argumentHint + ' \u2013 ' : '') + s.description }),
+      s.files.length ? h('div', { class: 'sub', text: 'Files: ' + s.files.slice(0, 6).join(', ') + (s.files.length > 6 ? '\u2026' : '') }) : null),
+    s.userInvocable ? h('button', { type: 'button', class: 'small', onclick: () => { dlg.close(); pickSkill(s.name); } }, 'Use') : null,
+    h('button', { type: 'button', class: 'small', onclick: () => viewSkill(s.name) }, 'View')));
+
+  openDlg('Skills',
+    h('div', { class: 'msgline', text: 'Skills are saved procedures. She loads one by herself when your request matches it, or you can run one by typing /name followed by your request.' }),
+    h('h4', {}, 'Installed'),
+    ...(rows.length ? rows : [h('div', { class: 'msgline', text: 'No skills installed yet.' })]),
+    h('h4', {}, 'Add a skill'),
+    h('div', { class: 'msgline', text: 'Drop a skill folder (one with a SKILL.md) into F:\\AI-Agents\\skills for every agent, or into this agent\u2019s own skills folder, or run add-skill.cmd. ' +
+      'It shows up here within a couple of seconds, with no restart. You can also ask her to \u201cwrite a skill for \u2026\u201d: she drafts it in her workspace and you install it. Only install skills you trust.' }));
+}
+
+async function viewSkill(name) {
+  try {
+    const d = await get('/skill?name=' + encodeURIComponent(name));
+    openDlg('/' + d.name,
+      h('div', { style: 'margin-bottom:8px' }, h('button', { type: 'button', class: 'small', onclick: openSkills }, '\u2190 All skills')),
+      h('div', { class: 'msgline', text: `${d.dir} (${d.source})` }),
+      h('pre', { class: 'big', text: d.text }),
+      d.files.length ? h('div', { class: 'msgline', text: 'Files: ' + d.files.join(', ') }) : null);
+  } catch (e) { dlgError(e.message); }
+}
 
 // ---------- speaking -----------------------------------------------------------------
 
@@ -829,6 +898,7 @@ $('#btn-chats').addEventListener('click', openChats);
 $('#btn-new').addEventListener('click', newChat);
 $('#btn-inspect').addEventListener('click', openInspect);
 $('#btn-models').addEventListener('click', openModels);
+$('#btn-skills').addEventListener('click', openSkills);
 $('#btn-panel').addEventListener('click', () => {
   const layout = $('#layout');
   if (window.matchMedia('(max-width: 900px)').matches) layout.classList.toggle('showpanel');
@@ -846,7 +916,7 @@ async function init() {
   setBusy(false);
 
   await refreshStatus();
-  await Promise.all([loadModels(), loadPersonas(), loadVoices()].map((p) => p.catch(() => {})));
+  await Promise.all([loadModels(), loadPersonas(), loadVoices(), loadSkills()].map((p) => p.catch(() => {})));
   await loadHistory();
   refreshPanels();
   setInterval(() => { if (!S.busy && !document.hidden) refreshStatus(); }, 6000);

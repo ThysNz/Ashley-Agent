@@ -39,8 +39,8 @@ function Write-Cmd($path, $text) { [IO.File]::WriteAllText($path, (($text -repla
 function Fill($text) { $text.Replace('__NAME__', $Name).Replace('__DISPLAY__', $DisplayName).Replace('__PORT__', [string]$Port) }
 
 # ---- folders -----------------------------------------------------------------
-New-Item -ItemType Directory -Path $dest, "$dest\config\personas", "$dest\workspace", "$dest\memory", "$dest\secrets" | Out-Null
-New-Item -ItemType File -Path "$dest\workspace\.gitkeep", "$dest\memory\.gitkeep" | Out-Null
+New-Item -ItemType Directory -Path $dest, "$dest\config\personas", "$dest\workspace", "$dest\memory", "$dest\secrets", "$dest\skills" | Out-Null
+New-Item -ItemType File -Path "$dest\workspace\.gitkeep", "$dest\memory\.gitkeep", "$dest\skills\.gitkeep" | Out-Null
 # Explanation only, never a token; the texts are re-worded for this agent.
 Write-Text "$dest\secrets\README.md" ((Get-Content "$template\secrets\README.md" -Raw -Encoding UTF8).Replace('Ashley', $DisplayName))
 Write-Text "$dest\set-github-token.cmd" ((Get-Content "$template\set-github-token.cmd" -Raw -Encoding UTF8).Replace('ashley\secrets', "$Name\secrets").Replace('Ashley', $DisplayName))
@@ -135,6 +135,7 @@ The full documentation is in `..\ashley\README.md`; everything there applies wit
 | Persona | `config\personas\__NAME__.md` (edit it to change who this agent is) |
 | Git | commits as `__DISPLAY__ <__NAME__@ai-agents.local>` (`config\agent.json`); a GitHub read token goes in via `set-github-token.cmd` |
 | Workspace / memory | `workspace\` and `memory\` in this folder (not committed to git) |
+| Skills | the shared ones in `..\skills\` plus this agent's own in `skills\`; add with `..\add-skill.cmd SOURCE -Agent __NAME__` |
 '@)
 
 Write-Host ""

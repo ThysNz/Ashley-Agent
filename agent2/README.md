@@ -13,3 +13,4 @@ The full documentation is in `..\ashley\README.md`; everything there applies wit
 | Persona | `config\personas\agent2.md` (edit it to change who this agent is) |
 | Git | commits as `Agent2 <agent2@ai-agents.local>` (`config\agent.json`); a GitHub read token goes in via `set-github-token.cmd` |
 | Workspace / memory | `workspace\` and `memory\` in this folder (not committed to git) |
+| Skills | the shared ones in `..\skills\` plus this agent's own in `skills\`; add with `..\add-skill.cmd SOURCE -Agent agent2` |

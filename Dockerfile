@@ -18,7 +18,7 @@ RUN apt-get update \
 
 RUN useradd -m -u 1000 -s /bin/bash agent \
  && echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent \
- && mkdir -p /agent/config /agent/workspace /agent/memory /agent/secrets \
+ && mkdir -p /agent/config /agent/workspace /agent/memory /agent/secrets /agent/skills /agent/shared-skills \
  && chown -R agent:agent /agent
 
 # Git for the agent ("she commits, Thys pushes"):
@@ -37,6 +37,8 @@ COPY --from=build /out /opt/agent
 ENV AGENT_CONFIG=/agent/config \
     AGENT_WORKSPACE=/agent/workspace \
     AGENT_MEMORY=/agent/memory \
+    AGENT_SKILLS=/agent/skills \
+    AGENT_SHARED_SKILLS=/agent/shared-skills \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     DOTNET_NOLOGO=1 \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 \

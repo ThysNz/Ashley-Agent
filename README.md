@@ -14,6 +14,8 @@ F:\AI-Agents\
   host\                   things that run on the Windows host, not in Docker
     start-qwen30b.bat       starts the 30B model (llama-server) on port 8080
   new-agent.cmd           creates another agent cloned from ashley (no models, no memory): new-agent.cmd NAME
+  add-skill.cmd           installs a skill (folder, .zip or SKILL.md): add-skill.cmd SOURCE [-Agent NAME]
+  skills\                 skills shared by every agent (Claude's SKILL.md format); each agent also has its own skills\
   agent2\  agent3\        two more agents made with it (ports 5001 and 5002, no model yet)
   ashley\                 first agent (port 5000)
     ashley-ui.cmd           open the web page (starts everything it needs)
@@ -27,6 +29,9 @@ F:\AI-Agents\
 Full documentation for Ashley (start-up steps, configuration, tools, voice, API, troubleshooting):
 [ashley\README.md](ashley/README.md). The other agents work the same way; each has a short `README.md` of its own, and
 [how to add more](ashley/README.md#adding-another-agent) is one command.
+Setting everything up on another computer: [NEW-PC-SETUP.md](NEW-PC-SETUP.md).
+**Skills** (saved procedures in the same format Claude uses) are described in [ashley\README.md](ashley/README.md#skills) and `skills\README.md`:
+drop a folder into `skills\`, or run `add-skill.cmd`; use one by typing `/skill-name your request`, or she picks it when a request matches.
 
 | Agent | Web page | Start | Model |
 |---|---|---|---|

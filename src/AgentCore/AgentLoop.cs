@@ -40,11 +40,15 @@ public sealed class AgentLoop
     public string PersonaName { get; private set; }
     public IReadOnlyList<Tool> Tools => _tools;
 
-    public AgentLoop(AgentConfig config, Paths paths, Sandbox sandbox, MemoryStore memory,
+    private readonly SkillStore _skills;
+    public SkillStore Skills => _skills;
+
+    public AgentLoop(AgentConfig config, Paths paths, Sandbox sandbox, MemoryStore memory, SkillStore skills,
                      IEnumerable<Tool> tools, LlmClient client, string personaName, string personaText)
     {
         _config = config;
         _paths = paths;
+        _skills = skills;
         _sandbox = sandbox;
         _memory = memory;
         _tools = tools.ToList();
@@ -111,8 +115,14 @@ public sealed class AgentLoop
     public async Task<string> RunTurnAsync(string userText, CancellationToken ct)
     {
         var turnStart = _history.Count;
-        Add(new Msg("user", userText));
+        // "/skill-name request" typed by the user becomes the skill's instructions plus the request.
+        var sent = _skills.TryExpand(userText) ?? userText;
+        Add(new Msg("user", sent));
         var emptyRetries = 0;
+        var nudges = 0;
+        var toolsUsed = false;
+        var failures = new Dictionary<string, int>(); // identical failing tool calls this turn
+        List<Msg>? nudge = null; // sent with the next model call only; never stored in the history
 
         try
         {
@@ -120,7 +130,9 @@ public sealed class AgentLoop
             {
                 FitToContext();
                 Emit(new AgentEvent("thinking", Round: round + 1));
-                var result = await _client.ChatAsync(_history, BuildSystemPrompt(), _tools, ct);
+                var toSend = nudge == null ? _history : _history.Concat(nudge).ToList();
+                nudge = null;
+                var result = await _client.ChatAsync(toSend, BuildSystemPrompt(), _tools, ct);
                 LastPromptTokens = result.PromptTokens;
                 if (result.PromptTokens is > 200 && _lastSentChars > 0)
                     _charsPerToken = Math.Clamp((double)_lastSentChars / result.PromptTokens.Value, 1.2, 4.5);
@@ -136,6 +148,20 @@ public sealed class AgentLoop
                         Add(new Msg("assistant", "(no reply)"));
                         return "(The model returned an empty reply.)";
                     }
+
+                    // Smaller models often announce the next step ("Checking the repo...") and stop instead of
+                    // doing it. Ask once or twice to go ahead; the exchange is not kept in the history.
+                    if (nudges < 2 && _client.Profile.SupportsTools && _tools.Count > 0 && LooksLikeAnnouncement(result.Content, toolsUsed || sent != userText))
+                    {
+                        nudges++;
+                        nudge = new List<Msg>
+                        {
+                            new("assistant", result.Content),
+                            new("user", "Go ahead and do it now with your tools. Don't describe the step; run it."),
+                        };
+                        Emit(new AgentEvent("text", Text: result.Content));
+                        continue;
+                    }
                     Add(new Msg("assistant", result.Content));
                     TrimHistory();
                     return result.Content;
@@ -150,10 +176,30 @@ public sealed class AgentLoop
                     Emit(new AgentEvent("text", Text: result.Content));
                 }
 
+                toolsUsed = true;
+                string? giveUp = null;
                 foreach (var call in result.Calls)
                 {
                     var output = await RunToolAsync(call, ct);
+
+                    // The same call failing the same way again and again means she is stuck in a loop.
+                    if (output.StartsWith("Error", StringComparison.Ordinal))
+                    {
+                        var key = call.Name + "|" + call.ArgsJson;
+                        var times = failures[key] = failures.GetValueOrDefault(key) + 1;
+                        if (times == 3)
+                            output += "\n\n[You have now made this exact call 3 times and it failed the same way each time. Stop repeating it: try a different approach, or tell Thys what is blocking you.]";
+                        else if (times >= 5)
+                            giveUp = $"I keep hitting the same error with {call.Name} ({Text.Clip(output.Split('\n')[0], 140)}), so I've stopped instead of looping. Tell me how you'd like to proceed.";
+                    }
                     Add(new Msg("tool", output, toolCallId: call.Id, toolName: call.Name));
+                }
+
+                if (giveUp != null)
+                {
+                    Add(new Msg("assistant", giveUp));
+                    TrimHistory();
+                    return giveUp;
                 }
             }
 
@@ -167,7 +213,7 @@ public sealed class AgentLoop
             // Drop the half-finished turn: an assistant tool request without its
             // results would be rejected by the model server on the next call.
             _history.RemoveRange(turnStart, _history.Count - turnStart);
-            Add(new Msg("user", userText));
+            Add(new Msg("user", sent));
             Add(new Msg("assistant", "(I was interrupted before finishing. Anything already written to disk is still there.)"));
             throw;
         }
@@ -176,6 +222,19 @@ public sealed class AgentLoop
             _history.RemoveRange(turnStart, _history.Count - turnStart);
             throw;
         }
+    }
+
+    // A short reply that ends in "..." or ":" is a step being announced, not an answer. Once tools have been
+    // used in this turn, a short reply that promises the next step ("Let me stage these files.") is too.
+    private static readonly System.Text.RegularExpressions.Regex Promises =
+        new(@"\b(let me(?! know)|i'll|i will|i'm going to|i am going to|next,? i)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private static bool LooksLikeAnnouncement(string content, bool toolsUsed)
+    {
+        var t = content.Trim();
+        if (t.Length == 0 || t.Length > 300 || t.Contains("```") || t.EndsWith('?')) return false;
+        if (t.EndsWith("...") || t.EndsWith('…') || t.EndsWith(':')) return true;
+        return toolsUsed && Promises.IsMatch(t);
     }
 
     private async Task<string> RunToolAsync(ToolCall call, CancellationToken ct)
@@ -256,6 +315,9 @@ public sealed class AgentLoop
             "git diff --stat and tell him briefly what changed; use one clear commit message per logical change. Never push, force anything, or rewrite history: pushing is turned off, " +
             "so after a commit tell Thys which repo folder and branch to push from his own PC. Do not commit secrets, tokens or large generated files.\n" +
             "- Prefer edit_file for small changes. Keep command output small (use head, tail, grep).");
+
+        var skillSection = _skills.PromptSection();
+        if (skillSection.Length > 0) parts.Add(skillSection);
 
         if (notes.Length > 0)
         {

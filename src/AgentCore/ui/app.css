@@ -164,3 +164,11 @@ dialog::backdrop { background: rgba(0, 0, 0, .45); }
 @media (prefers-reduced-motion: reduce) { .seg { transition: none; } .spin, .mic.rec { animation: none; } }
 .circle { width: 13px; height: 13px; border: 1.5px solid var(--faint); border-radius: 50%; margin-top: 3px; flex: none; }
 .mic.wait { opacity: .55; }
+
+/* "/name" skill suggestions above the message box */
+.slash { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); max-height: 240px; overflow-y: auto; z-index: 3; }
+.slash[hidden] { display: none; }
+.slash .opt { display: flex; gap: 10px; align-items: baseline; padding: 6px 12px; cursor: pointer; }
+.slash .opt.on, .slash .opt:hover { background: var(--surface2); }
+.slash .opt b { font-weight: 600; flex: none; }
+.slash .opt span { color: var(--faint); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
